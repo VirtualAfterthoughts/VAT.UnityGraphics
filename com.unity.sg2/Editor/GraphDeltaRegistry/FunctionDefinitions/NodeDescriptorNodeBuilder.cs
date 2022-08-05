@@ -39,8 +39,8 @@ namespace UnityEditor.ShaderGraph.Defs
             m_nodeDescriptor = nodeDescriptor; // copy
 
             // If there are no functions in nodeDescriptor
-            // leave m_defaultFunction == null
-            // leave m_nameToFunction == null
+            //   leave m_defaultFunction == null
+            //   leave m_nameToFunction == null
             if (m_nodeDescriptor.Functions.Count < 1)
             {
                 var msg = $"BuildNode called for NodeDescriptor with no defined functions: {m_nodeDescriptor.Name}";
@@ -80,38 +80,18 @@ namespace UnityEditor.ShaderGraph.Defs
             m_functionNameToModifiedBody = functionNameToModifiedBody;
         }
 
-        /// <summary>
-        /// Returns the given FunctionDescriptor's body code with function calls
-        /// that match keys in functionNameToRewrittenFunctionName replaced with
-        /// the associated value in functionNameToRewrittenFunctionName.
-        ///
-        /// Example
-        /// If functionNameToRewrittenFunctionName contains
-        /// [MyFuncName, NewFuncName]
-        /// functionDescriptor.Body will have all calls like MyFuncName(...)
-        /// replaced with NewFuncName(...).
-        /// </summary>
-        private static string LocalizeFunctionCalls(
-            Dictionary<string, string> functionNameToRewrittenFunctionName,
-            FunctionDescriptor functionDescriptor)
+        public RegistryKey GetRegistryKey()
         {
-            // Find all places in the body code that match FUNCTION_CALL_PATTERN
-            // and repalce if the value is a key in functionNameToRewrittenFunctionName.
-            string matchReplaceBody = Regex.Replace(
-                functionDescriptor.Body,
-                FUNCTION_CALL_PATTERN,
-                (Match match) =>
-                {
-                    // the value of the first capturing group is the function name
-                    var functionName = match.Groups[1].Value;
-                    // NOTE - To avoid checking keywords for match, we assume
-                    // that language keywords (Eg. "if") are not in functionNameToRewrittenFunctionName.
-                    return functionNameToRewrittenFunctionName.ContainsKey(functionName) ?
-                        functionNameToRewrittenFunctionName[functionName] + "(" :
-                        match.Value;
-                }
-            );
-            return matchReplaceBody;
+            return new RegistryKey
+            {
+                Name = m_nodeDescriptor.Name,
+                Version = m_nodeDescriptor.Version
+            };
+        }
+
+        public RegistryFlags GetRegistryFlags()
+        {
+            return RegistryFlags.Func;
         }
 
         /// <summary>
@@ -163,6 +143,106 @@ namespace UnityEditor.ShaderGraph.Defs
             }
 
             GraphTypeHelpers.ResolveDynamicPorts(node);
+        }
+
+        ShaderFunction INodeDefinitionBuilder.GetShaderFunction(
+            NodeHandler node,
+            ShaderContainer container,
+            Registry registry,
+            out INodeDefinitionBuilder.Dependencies deps)
+        {
+            // find the selected function
+            FunctionDescriptor selectedFunction = (FunctionDescriptor)m_defaultFunction;
+            if (node.HasMetadata(SELECTED_FUNCTION_FIELD_NAME))
+            {
+                string functionName = node.GetMetadata<string>(SELECTED_FUNCTION_FIELD_NAME);
+                if (m_nameToFunction.ContainsKey(functionName))
+                {
+                    selectedFunction = m_nameToFunction[functionName];
+                }
+            }
+
+            // remove all alternatives to the selected function
+            //List<FunctionDescriptor> availableFunctions = new ();
+            //foreach (FunctionDescriptor fd in m_nodeDescriptor.Functions)
+            //{
+            //    if (fd)
+            //}
+
+            // determine the dynamic fallback type
+            var fallbackType = NodeBuilderUtils.FallbackTypeResolver(node);
+
+            // make shader functions for each internal function descriptor
+            Dictionary<string, ShaderFunction> nameToShaderFunction = new();
+            foreach (FunctionDescriptor fd in m_nodeDescriptor.Functions)
+            {
+                ShaderFunction shaderFunction = BuildShaderFunction(container, fd, fallbackType);
+                nameToShaderFunction[fd.Name] = shaderFunction;
+            }
+
+            // create the dependencies object that is returned
+            deps = new();
+
+            // put all non-main functions in deps
+            deps.localFunctions = new List<ShaderFunction>();
+            foreach (string functionName in nameToShaderFunction.Keys)
+            {
+                if (!functionName.Equals(selectedFunction.Name))
+                    deps.localFunctions.Add(nameToShaderFunction[functionName]);
+            }
+
+            // put all includes in deps
+            deps.includes = new List<ShaderFoundry.IncludeDescriptor>();
+            foreach (FunctionDescriptor fd in m_nodeDescriptor.Functions)
+            {
+                AddIncludesFromFunctionDescriptor(container, fd, deps.includes);
+            }
+
+            return nameToShaderFunction[selectedFunction.Name];
+        }
+
+        private ShaderFunction BuildShaderFunction(
+            ShaderContainer container,
+            FunctionDescriptor functionDescriptor,
+            ParametricTypeDescriptor fallbackType)
+        {
+            // Get a shader function builder
+            var shaderFunctionBuilder = new ShaderFunction.Builder(
+                container,
+                m_functionNameToShaderFunctionName[functionDescriptor.Name]);
+
+            // Set up the vars in the shader function.
+            foreach (var param in functionDescriptor.Parameters)
+            {
+                var shaderType = ShaderTypeForParameter(container, param, fallbackType);
+
+                if (param.Usage == Usage.Out)
+                {
+                    shaderFunctionBuilder.AddOutput(shaderType, param.Name);
+                }
+                else if (param.Usage == GraphType.Usage.In
+                    || param.Usage == GraphType.Usage.Static
+                    || param.Usage == GraphType.Usage.Local && !ParametricTypeUtils.IsParametric(param))
+                {
+                    shaderFunctionBuilder.AddInput(shaderType, param.Name);
+                }
+                else if (param.Usage == Usage.Local)
+                {
+                    var init = ParametricTypeUtils.ManagedToParametricToHLSL(param.DefaultValue);
+                    shaderFunctionBuilder.AddVariableDeclarationStatement(shaderType, param.Name, init);
+                }
+                else
+                {
+                    throw new Exception($"No ShaderFunction parameter type for {param.Usage}");
+                }
+            }
+
+            // Add the shader function body.
+            shaderFunctionBuilder.AddLine(m_functionNameToModifiedBody[functionDescriptor.Name]);
+
+
+            // Return the results of ShaderFoundry's build.
+            return shaderFunctionBuilder.Build();
         }
 
         private static ShaderType GetShaderTypeForParametricTypeDescriptor(
@@ -238,50 +318,6 @@ namespace UnityEditor.ShaderGraph.Defs
             }
         }
 
-        private ShaderFunction BuildShaderFunction(
-            ShaderContainer container,
-            FunctionDescriptor functionDescriptor,
-            ParametricTypeDescriptor fallbackType)
-        {
-            // Get a shader function builder
-            var shaderFunctionBuilder = new ShaderFunction.Builder(
-                container,
-                m_functionNameToShaderFunctionName[functionDescriptor.Name]);
-
-            // Set up the vars in the shader function.
-            foreach (var param in functionDescriptor.Parameters)
-            {
-                var shaderType = ShaderTypeForParameter(container, param, fallbackType);
-
-                if (param.Usage == Usage.Out)
-                {
-                    shaderFunctionBuilder.AddOutput(shaderType, param.Name);
-                }
-                else if (param.Usage == GraphType.Usage.In
-                    || param.Usage == GraphType.Usage.Static
-                    || param.Usage == GraphType.Usage.Local && !ParametricTypeUtils.IsParametric(param))
-                {
-                    shaderFunctionBuilder.AddInput(shaderType, param.Name);
-                }
-                else if(param.Usage == Usage.Local)
-                {
-                    var init = ParametricTypeUtils.ManagedToParametricToHLSL(param.DefaultValue);
-                    shaderFunctionBuilder.AddVariableDeclarationStatement(shaderType, param.Name, init);
-                }
-                else
-                {
-                    throw new Exception($"No ShaderFunction parameter type for {param.Usage}");
-                }
-            }
-
-            // Add the shader function body.
-            shaderFunctionBuilder.AddLine(m_functionNameToModifiedBody[functionDescriptor.Name]);
-
-
-            // Return the results of ShaderFoundry's build.
-            return shaderFunctionBuilder.Build();
-        }
-
         private void AddIncludesFromFunctionDescriptor(
             ShaderContainer shaderContainer,
             FunctionDescriptor fd,
@@ -295,67 +331,39 @@ namespace UnityEditor.ShaderGraph.Defs
             }
         }
 
-        ShaderFunction INodeDefinitionBuilder.GetShaderFunction(
-            NodeHandler node,
-            ShaderContainer container,
-            Registry registry,
-            out INodeDefinitionBuilder.Dependencies deps)
+        /// <summary>
+        /// Returns the given FunctionDescriptor's body code with function calls
+        /// that match keys in functionNameToRewrittenFunctionName replaced with
+        /// the associated value in functionNameToRewrittenFunctionName.
+        ///
+        /// Example
+        /// If functionNameToRewrittenFunctionName contains
+        /// [MyFuncName, NewFuncName]
+        /// functionDescriptor.Body will have all calls like MyFuncName(...)
+        /// replaced with NewFuncName(...).
+        /// </summary>
+        private static string LocalizeFunctionCalls(
+            Dictionary<string, string> functionNameToRewrittenFunctionName,
+            FunctionDescriptor functionDescriptor)
         {
-            // find the selected function
-            FunctionDescriptor selectedFunction = (FunctionDescriptor)m_defaultFunction;
-            if (node.HasMetadata(SELECTED_FUNCTION_FIELD_NAME))
-            {
-                string functionName = node.GetMetadata<string>(SELECTED_FUNCTION_FIELD_NAME);
-                if (m_nameToFunction.ContainsKey(functionName))
+            // Find all places in the body code that match FUNCTION_CALL_PATTERN
+            // and repalce if the value is a key in functionNameToRewrittenFunctionName.
+            string matchReplaceBody = Regex.Replace(
+                functionDescriptor.Body,
+                FUNCTION_CALL_PATTERN,
+                (Match match) =>
                 {
-                    selectedFunction = m_nameToFunction[functionName];
+                    // the value of the first capturing group is the function name
+                    var functionName = match.Groups[1].Value;
+                    // NOTE - To avoid checking keywords for match, we assume
+                    // that language keywords (Eg. "if") are not in functionNameToRewrittenFunctionName.
+                    return functionNameToRewrittenFunctionName.ContainsKey(functionName) ?
+                        functionNameToRewrittenFunctionName[functionName] + "(" :
+                        match.Value;
                 }
-            }
-
-            // determine the dynamic fallback type
-            var fallbackType = NodeBuilderUtils.FallbackTypeResolver(node);
-
-            // make shader functions for each internal function descriptor
-            Dictionary<string, ShaderFunction> nameToShaderFunction = new();
-            foreach (FunctionDescriptor fd in m_nodeDescriptor.Functions)
-            {
-                ShaderFunction shaderFunction = BuildShaderFunction(container, fd, fallbackType);
-                nameToShaderFunction[fd.Name] = shaderFunction;
-            }
-
-            // create the dependencies object that is returned
-            deps = new();
-
-            // put all non-main functions in deps
-            deps.localFunctions = new List<ShaderFunction>();
-            foreach (string functionName in nameToShaderFunction.Keys)
-            {
-                if (!functionName.Equals(selectedFunction.Name))
-                    deps.localFunctions.Add(nameToShaderFunction[functionName]);
-            }
-
-            // put all includes in deps
-            deps.includes = new List<ShaderFoundry.IncludeDescriptor>();
-            foreach (FunctionDescriptor fd in m_nodeDescriptor.Functions)
-            {
-                AddIncludesFromFunctionDescriptor(container, fd, deps.includes);
-            }
-
-            return nameToShaderFunction[selectedFunction.Name];
+            );
+            return matchReplaceBody;
         }
 
-        public RegistryKey GetRegistryKey()
-        {
-            return new RegistryKey
-            {
-                Name = m_nodeDescriptor.Name,
-                Version = m_nodeDescriptor.Version
-            };
-        }
-
-        public RegistryFlags GetRegistryFlags()
-        {
-            return RegistryFlags.Func;
-        }
     }
 }
