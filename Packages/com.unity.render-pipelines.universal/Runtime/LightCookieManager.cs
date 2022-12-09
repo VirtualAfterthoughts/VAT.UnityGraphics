@@ -5,9 +5,9 @@ using Unity.Mathematics;
 
 namespace UnityEngine.Rendering.Universal
 {
-    internal class LightCookieManager : IDisposable
+    public class LightCookieManager : IDisposable
     {
-        static class ShaderProperty
+        public static class ShaderProperty
         {
             public static readonly int mainLightTexture = Shader.PropertyToID("_MainLightCookieTexture");
             public static readonly int mainLightWorldToLight = Shader.PropertyToID("_MainLightWorldToLight");
@@ -247,7 +247,7 @@ namespace UnityEngine.Rendering.Universal
             }
         }
 
-        private struct ShaderBitArray
+        public struct ShaderBitArray
         {
             const int k_BitsPerElement = 32;
             const int k_ElementShift = 5;
@@ -340,7 +340,7 @@ namespace UnityEngine.Rendering.Universal
         }
 
         /// Must match light data layout.
-        private class LightCookieShaderData : IDisposable
+        public class LightCookieShaderData : IDisposable
         {
             int m_Size = 0;
             bool m_UseStructuredBuffer;
@@ -443,6 +443,11 @@ namespace UnityEngine.Rendering.Universal
 
         Texture2DAtlas m_AdditionalLightsCookieAtlas;
         LightCookieShaderData m_AdditionalLightsCookieShaderData;
+
+        // zCubed Additions
+        public Texture2DAtlas additionalLightCookieAtlas { get => m_AdditionalLightsCookieAtlas; }
+        public LightCookieShaderData additionalLightsCookieShaderData { get => m_AdditionalLightsCookieShaderData; }
+        // ===============
 
         readonly Settings m_Settings;
         WorkMemory m_WorkMem;

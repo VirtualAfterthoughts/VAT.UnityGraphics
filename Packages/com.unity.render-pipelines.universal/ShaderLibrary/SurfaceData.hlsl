@@ -14,6 +14,10 @@ struct SurfaceData
     half  alpha;
     half  clearCoatMask;
     half  clearCoatSmoothness;
+
+    // zCubed Additions
+    half3 fluorescence;
+    // ================
 };
 
 #endif

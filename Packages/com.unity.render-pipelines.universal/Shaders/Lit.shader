@@ -67,6 +67,24 @@ Shader "Universal Render Pipeline/Lit"
         [HideInInspector][NoScaleOffset]unity_Lightmaps("unity_Lightmaps", 2DArray) = "" {}
         [HideInInspector][NoScaleOffset]unity_LightmapsInd("unity_LightmapsInd", 2DArray) = "" {}
         [HideInInspector][NoScaleOffset]unity_ShadowMasks("unity_ShadowMasks", 2DArray) = "" {}
+
+        // zCubed Additions
+        _BRDFMap ("BRDF Map", 2D) = "white" {}
+        
+        [HideInInspector] _PackingMode("Packing Mode", float) = 0.0
+		
+        _BumpToOcclusion("Normal To Occlusion", Range(0.0, 2.0)) = 1.0
+
+        _EmissionFalloff("Emission Falloff", Range(-10, 10)) = 0.0
+        _EmissionMultiply("Emission Multiply", Float) = 0.0
+
+        _OcclusionContribution("AO Contribution", Vector) = (1.0, 1.0, 1.0, 1.0)
+        _EmissionOcclusion("Emission Occlusion", Range(0, 1)) = 0.0
+        _EmissionBakeMultipler("GI Multiplier", Float) = 1.0
+
+        _ProximityFadeBias("Proximity Fade Bias", Float) = -0.05
+        _ProximityFadeDepth("Proximity Fade Depth", Float) = 0.05
+        // ----------------
     }
 
     SubShader
@@ -95,7 +113,7 @@ Shader "Universal Render Pipeline/Lit"
             #pragma target 4.5
 
             // -------------------------------------
-            // Material Keywords
+            // Material Keywords            
             #pragma shader_feature_local _NORMALMAP
             #pragma shader_feature_local _PARALLAXMAP
             #pragma shader_feature_local _RECEIVE_SHADOWS_OFF
@@ -140,6 +158,16 @@ Shader "Universal Render Pipeline/Lit"
             #pragma multi_compile_instancing
             #pragma instancing_options renderinglayer
             #pragma multi_compile _ DOTS_INSTANCING_ON
+
+            //--------------------------------------
+            // zCubed Additions
+            #pragma shader_feature_local_fragment _BRDFMAP
+            #pragma shader_feature_local_fragment _ALBEDO_EMISSION_MULTIPLY
+            #pragma shader_feature_local_fragment _ALPHAGLASS_ON
+            #pragma shader_feature_local_fragment _PROXIMITY_FADE
+            #pragma multi_compile_fragment _ LOD_FADE_CROSSFADE
+            #pragma multi_compile_fragment _ _URP_FORWARD_PLUS
+            #pragma shader_feature_local_fragment _EMISSION_IS_FLUORESCENCE
 
             #pragma vertex LitPassVertex
             #pragma fragment LitPassFragment
@@ -186,7 +214,6 @@ Shader "Universal Render Pipeline/Lit"
             #include "Packages/com.unity.render-pipelines.universal/Shaders/ShadowCasterPass.hlsl"
             ENDHLSL
         }
-
         Pass
         {
             // Lightmode matches the ShaderPassName set in UniversalRenderPipeline.cs. SRPDefaultUnlit and passes with
@@ -253,7 +280,6 @@ Shader "Universal Render Pipeline/Lit"
             #include "Packages/com.unity.render-pipelines.universal/Shaders/LitGBufferPass.hlsl"
             ENDHLSL
         }
-
         Pass
         {
             Name "DepthOnly"
@@ -344,12 +370,32 @@ Shader "Universal Render Pipeline/Lit"
 
             #pragma shader_feature_local_fragment _SPECGLOSSMAP
 
+            // zCubed Additions
+            #define _EMISSION_MULTIPLY
+                
             #include "Packages/com.unity.render-pipelines.universal/Shaders/LitInput.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/Shaders/LitMetaPass.hlsl"
 
             ENDHLSL
         }
+        Pass
+        {
+            Name "MotionVectors"
+            Tags{ "LightMode" = "MotionVectors" }
 
+            ZWrite[_ZWrite]
+            Cull[_Cull]
+
+            HLSLPROGRAM
+			#pragma target 4.5
+
+            #pragma multi_compile_instancing
+            #include "Packages/com.unity.render-pipelines.universal/Shaders/LitMotionVectors.hlsl"
+
+            #pragma vertex vert
+            #pragma fragment frag
+            ENDHLSL
+        }
         Pass
         {
             Name "Universal2D"
@@ -374,6 +420,7 @@ Shader "Universal Render Pipeline/Lit"
         }
     }
 
+    /*
     SubShader
     {
         // Universal Pipeline tag is required. If Universal render pipeline is not set in the graphics settings
@@ -444,6 +491,16 @@ Shader "Universal Render Pipeline/Lit"
             #pragma multi_compile_fog
             #pragma multi_compile_fragment _ DEBUG_DISPLAY
 
+            //--------------------------------------
+            // zCubed Additions
+            #pragma shader_feature_local_fragment _BRDFMAP
+            #pragma shader_feature_local_fragment _ALBEDO_EMISSION_MULTIPLY
+            #pragma shader_feature_local_fragment _ALPHAGLASS_ON
+            #pragma shader_feature_local_fragment _PROXIMITY_FADE
+            #pragma multi_compile_fragment _ LOD_FADE_CROSSFADE
+            #pragma multi_compile_fragment _ _URP_FORWARD_PLUS
+            #pragma shader_feature_local_fragment _EMISSION_IS_FLUORESCENCE
+
             #pragma vertex LitPassVertex
             #pragma fragment LitPassFragment
 
@@ -605,6 +662,7 @@ Shader "Universal Render Pipeline/Lit"
             ENDHLSL
         }
     }
+    */
 
     FallBack "Hidden/Universal Render Pipeline/FallbackError"
     CustomEditor "UnityEditor.Rendering.Universal.ShaderGUI.LitShader"

@@ -176,8 +176,7 @@ namespace UnityEditor.Rendering.Universal.Converters
                 UniversalRenderPipelineAsset.CreateRendererAsset(assetPath, RendererType.UniversalRenderer, true, fileName)
                 as UniversalRendererData;
             //Missing API to set deferred or forward
-            rendererAsset.renderingMode =
-                renderingPath == RenderingPath.Forward ? RenderingMode.Forward : RenderingMode.Deferred;
+            rendererAsset.renderingMode = renderingPath == RenderingPath.Forward ? RenderingMode.Forward : RenderingMode.Deferred;
             //missing API to assign to pipeline asset
             return rendererAsset;
         }

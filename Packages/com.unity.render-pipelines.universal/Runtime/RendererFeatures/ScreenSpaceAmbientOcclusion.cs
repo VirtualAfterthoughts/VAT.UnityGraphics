@@ -1,7 +1,4 @@
 using System;
-#if UNITY_EDITOR
-using ShaderKeywordFilter = UnityEditor.ShaderKeywordFilter;
-#endif
 
 namespace UnityEngine.Rendering.Universal
 {
@@ -10,10 +7,6 @@ namespace UnityEngine.Rendering.Universal
     {
         // Parameters
         [SerializeField] internal bool Downsample = false;
-#if UNITY_EDITOR
-        // AfterOpaque requires also the "off variant" to be included
-        [ShaderKeywordFilter.SelectIf(true, overridePriority: true, keywordNames: new string[] {"", ShaderKeywordStrings.ScreenSpaceOcclusion})]
-#endif
         [SerializeField] internal bool AfterOpaque = false;
         [SerializeField] internal DepthSource Source = DepthSource.DepthNormals;
         [SerializeField] internal NormalQuality NormalSamples = NormalQuality.Medium;
@@ -41,11 +34,6 @@ namespace UnityEngine.Rendering.Universal
     [Tooltip("The Ambient Occlusion effect darkens creases, holes, intersections and surfaces that are close to each other.")]
     internal class ScreenSpaceAmbientOcclusion : ScriptableRendererFeature
     {
-#if UNITY_EDITOR
-        [ShaderKeywordFilter.SelectIf(true, overridePriority: true, keywordNames: ShaderKeywordStrings.ScreenSpaceOcclusion)]
-        private const bool k_RequiresScreenSpaceOcclusion = true;
-#endif
-
         // Serialized Fields
         [SerializeField, HideInInspector] private Shader m_Shader = null;
         [SerializeField] private ScreenSpaceAmbientOcclusionSettings m_Settings = new ScreenSpaceAmbientOcclusionSettings();
@@ -355,9 +343,6 @@ namespace UnityEngine.Rendering.Universal
                     }
                     PostProcessUtils.SetSourceSize(cmd, m_AOPassDescriptor);
 
-                    Vector4 scaleBiasRt = new Vector4(-1, 1.0f, -1.0f, 1.0f);
-                    cmd.SetGlobalVector(Shader.PropertyToID("_ScaleBiasRt"), scaleBiasRt);
-
                     // Execute the SSAO
                     Render(cmd, m_SSAOTexture1Target, ShaderPasses.AO);
 
@@ -375,16 +360,6 @@ namespace UnityEngine.Rendering.Universal
                     // If true, SSAO pass is inserted after opaque pass and is expected to modulate lighting result now.
                     if (m_CurrentSettings.AfterOpaque)
                     {
-                        // SetRenderTarget has logic to flip projection matrix when rendering to render texture. Flip the uv to account for that case.
-                        CameraData cameraData = renderingData.cameraData;
-                        bool isCameraColorFinalTarget = (cameraData.cameraType == CameraType.Game && m_Renderer.cameraColorTarget == BuiltinRenderTextureType.CameraTarget && cameraData.camera.targetTexture == null);
-                        bool yflip = !isCameraColorFinalTarget;
-                        float flipSign = yflip ? -1.0f : 1.0f;
-                        scaleBiasRt = (flipSign < 0.0f)
-                            ? new Vector4(flipSign, 1.0f, -1.0f, 1.0f)
-                            : new Vector4(flipSign, 0.0f, 1.0f, 1.0f);
-                        cmd.SetGlobalVector(Shader.PropertyToID("_ScaleBiasRt"), scaleBiasRt);
-
                         // This implicitly also bind depth attachment. Explicitly binding m_Renderer.cameraDepthTarget does not work.
                         cmd.SetRenderTarget(
                             m_Renderer.cameraColorTarget,

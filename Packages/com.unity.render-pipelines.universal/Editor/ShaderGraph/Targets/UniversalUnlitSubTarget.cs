@@ -323,6 +323,10 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                 CoreKeywordDescriptors.SampleGI,
                 CoreKeywordDescriptors.DBuffer,
                 CoreKeywordDescriptors.DebugDisplay,
+
+                // zCubed Additions
+                zCubedKeywordDescriptors.LodCrossfade,
+                // ----------------
             };
         }
         #endregion

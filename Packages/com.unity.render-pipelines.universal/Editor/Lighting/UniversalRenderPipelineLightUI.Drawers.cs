@@ -5,6 +5,7 @@ using System.Reflection;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
+using UnityEngine.Rendering.Universal.Additions;
 
 namespace UnityEditor.Rendering.Universal
 {
@@ -20,7 +21,10 @@ namespace UnityEditor.Rendering.Universal
             Emission = 1 << 2,
             Rendering = 1 << 3,
             Shadows = 1 << 4,
-            LightCookie = 1 << 5
+            LightCookie = 1 << 5,
+
+            // zCubed Additions
+            Volumetrics = 1 << 6,
         }
 
         static readonly ExpandedState<Expandable, Light> k_ExpandedState = new(~-1, "URP");
@@ -73,7 +77,13 @@ namespace UnityEditor.Rendering.Universal
             CED.FoldoutGroup(Styles.lightCookieHeader,
                 Expandable.LightCookie,
                 k_ExpandedState,
-                DrawLightCookieContent)
+                DrawLightCookieContent),
+            
+            // zCubed Additions
+            CED.FoldoutGroup(Styles.volumetricsHeader,
+                Expandable.Volumetrics,
+                k_ExpandedState,
+                DrawVolumetricsContent)
         );
 
         static Func<int> s_SetGizmosDirty = SetGizmosDirty();
@@ -262,6 +272,9 @@ namespace UnityEditor.Rendering.Universal
 #else
                     serializedLight.settings.DrawRange(false);
 #endif
+
+                    EditorGUILayout.PropertyField(serializedLight.specularRadius);
+                    EditorGUILayout.PropertyField(serializedLight.blacklight);
                 }
             }
         }
@@ -327,6 +340,11 @@ namespace UnityEditor.Rendering.Universal
                         // this min bound should match the calculation in SharedLightData::GetNearPlaneMinBound()
                         float nearPlaneMinBound = Mathf.Min(0.01f * serializedLight.settings.range.floatValue, 0.1f);
                         EditorGUILayout.Slider(serializedLight.settings.shadowsNearPlane, nearPlaneMinBound, 10.0f, Styles.ShadowNearPlane);
+
+                        // zCubed Additions
+                        //EditorGUILayout.PropertyField(serializedLight.pcssNear);
+                        EditorGUILayout.PropertyField(serializedLight.pcfRadius);
+                        // ================
                     }
 
                     if (UniversalRenderPipeline.asset.supportsLightLayers)
@@ -464,6 +482,27 @@ namespace UnityEditor.Rendering.Universal
                     if (EditorGUI.EndChangeCheck())
                         Experimental.Lightmapping.SetLightDirty((UnityEngine.Light)serializedLight.serializedObject.targetObject);
                 }
+            }
+        }
+
+        // zCubed Additions
+        static void DrawVolumetricsContent(UniversalRenderPipelineSerializedLight serializedLight, Editor owner)
+        {
+            using (var checkScope = new EditorGUI.ChangeCheckScope())
+            {
+                EditorGUILayout.PropertyField(serializedLight.volumetricsEnabled);
+                using (new EditorGUI.DisabledScope(!serializedLight.volumetricsEnabled.boolValue))
+                {
+                    EditorGUILayout.PropertyField(serializedLight.volumetricsSyncIntensity);
+
+                    using (new EditorGUI.DisabledScope(serializedLight.volumetricsSyncIntensity.boolValue))
+                    {
+                        EditorGUILayout.PropertyField(serializedLight.volumetricsIntensity);
+                    }
+                }
+
+                if (checkScope.changed)
+                    serializedLight.Apply();
             }
         }
     }

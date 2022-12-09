@@ -7,7 +7,7 @@ using UnityEngine.Rendering.Universal;
 
 namespace UnityEditor.Rendering.Universal
 {
-    internal static class Property
+    public static class Property
     {
         public static readonly string SpecularWorkflowMode = "_WorkflowMode";
         public static readonly string SurfaceType = "_Surface";

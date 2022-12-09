@@ -172,7 +172,7 @@ namespace UnityEditor.Rendering.Universal
                     return false;
 
                 var rendererData = selectedRendererOption == -1 ? rpAsset.scriptableRendererData : rpAsset.m_RendererDataList[selectedRendererOption];
-
+                
                 var forwardRendererData = rendererData as UniversalRendererData;
                 if (forwardRendererData != null && forwardRendererData.postProcessData == null)
                     return true;

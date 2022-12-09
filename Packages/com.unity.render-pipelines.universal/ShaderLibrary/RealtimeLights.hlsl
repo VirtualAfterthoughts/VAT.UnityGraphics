@@ -26,8 +26,14 @@ uint GetMeshRenderingLightLayer()
 struct Light
 {
     half3   direction;
+
+    // zCubed Additions
+    half3   specularDirection;
+    half4   miscInfo;
+    // ===============
+
     half3   color;
-    float   distanceAttenuation; // full-float precision required on some platforms
+    half    distanceAttenuation;
     half    shadowAttenuation;
     uint    layerMask;
 };
@@ -59,6 +65,18 @@ struct Light
 
     #define LIGHT_LOOP_END }
 #endif
+
+// zCubed Additions
+#if USE_FORWARD_PLUS_LIGHTING
+
+    #undef LIGHT_LOOP_BEGIN
+    #undef LIGHT_LOOP_END
+
+    #define LIGHT_LOOP_BEGIN
+
+    #define LIGHT_LOOP_END }
+#endif
+// ----------------
 
 ///////////////////////////////////////////////////////////////////////////////
 //                        Attenuation Functions                               /
@@ -115,6 +133,12 @@ Light GetMainLight()
 {
     Light light;
     light.direction = half3(_MainLightPosition.xyz);
+
+    // zCubed Additions
+    light.specularDirection = light.direction;
+    light.miscInfo = 0.0;
+    // ===============
+
 #if USE_CLUSTERED_LIGHTING
     light.distanceAttenuation = 1.0;
 #else
@@ -166,7 +190,72 @@ Light GetMainLight(InputData inputData, half4 shadowMask, AmbientOcclusionFactor
     return light;
 }
 
+// zCubed Additions
+float3 GetSphericalAreaLightPoint(InputData inputData, float3 lightVector, float radius) 
+{
+    float3 reflection = reflect(inputData.viewDirectionWS, inputData.normalWS);
+    float3 centerToRay = dot(lightVector, reflection) * reflection - lightVector;
+    return lightVector + centerToRay * saturate(radius / length(centerToRay));
+}
+
+Light GetAdditionalPerObjectLight(int perObjectLightIndex, InputData inputData)
+{
+    // Abstraction over Light input constants
+#if USE_STRUCTURED_BUFFER_FOR_LIGHT_DATA
+    float4 lightPositionWS = _AdditionalLightsBuffer[perObjectLightIndex].position;
+    half3 color = _AdditionalLightsBuffer[perObjectLightIndex].color.rgb;
+    half4 distanceAndSpotAttenuation = _AdditionalLightsBuffer[perObjectLightIndex].attenuation;
+    half4 spotDirection = _AdditionalLightsBuffer[perObjectLightIndex].spotDirection;
+    half4 miscInfo = 0;
+#ifdef _LIGHT_LAYERS
+    uint lightLayerMask = _AdditionalLightsBuffer[perObjectLightIndex].layerMask;
+#else
+    uint lightLayerMask = DEFAULT_LIGHT_LAYERS;
+#endif
+
+#else
+    float4 lightPositionWS = _AdditionalLightsPosition[perObjectLightIndex];
+    half3 color = _AdditionalLightsColor[perObjectLightIndex].rgb;
+    half4 distanceAndSpotAttenuation = _AdditionalLightsAttenuation[perObjectLightIndex];
+    half4 spotDirection = _AdditionalLightsSpotDir[perObjectLightIndex];
+    half4 miscInfo = _AdditionalLightsMiscInfo[perObjectLightIndex];
+#ifdef _LIGHT_LAYERS
+    uint lightLayerMask = asuint(_AdditionalLightsLayerMasks[perObjectLightIndex]);
+#else
+    uint lightLayerMask = DEFAULT_LIGHT_LAYERS;
+#endif
+
+#endif
+
+    // Directional lights store direction in lightPosition.xyz and have .w set to 0.0.
+    // This way the following code will work for both directional and punctual lights.
+    float3 positionWS = inputData.positionWS;
+
+    float3 lightVector = lightPositionWS.xyz - positionWS * lightPositionWS.w;
+
+    float3 closestPoint = GetSphericalAreaLightPoint(inputData, lightVector, miscInfo.w);
+    
+    float distanceSqr = max(dot(lightVector, lightVector), HALF_MIN);
+
+    half3 lightDirection = half3(lightVector * rsqrt(distanceSqr));
+    half attenuation = half(DistanceAttenuation(distanceSqr, distanceAndSpotAttenuation.xy) * AngleAttenuation(spotDirection.xyz, lightDirection, distanceAndSpotAttenuation.zw));
+
+    Light light;
+    light.direction = lightDirection;
+    light.specularDirection = normalize(closestPoint);
+    light.miscInfo = miscInfo;
+    //light.specularDirection = lightDirection;
+    light.distanceAttenuation = attenuation;
+    light.shadowAttenuation = 1.0; // This value can later be overridden in GetAdditionalLight(uint i, float3 positionWS, half4 shadowMask)
+    light.color = color;
+    light.layerMask = lightLayerMask;
+
+    return light;
+}
+// ================
+
 // Fills a light struct given a perObjectLightIndex
+/*
 Light GetAdditionalPerObjectLight(int perObjectLightIndex, float3 positionWS)
 {
     // Abstraction over Light input constants
@@ -200,8 +289,7 @@ Light GetAdditionalPerObjectLight(int perObjectLightIndex, float3 positionWS)
     float distanceSqr = max(dot(lightVector, lightVector), HALF_MIN);
 
     half3 lightDirection = half3(lightVector * rsqrt(distanceSqr));
-    // full-float precision required on some platforms
-    float attenuation = half(DistanceAttenuation(distanceSqr, distanceAndSpotAttenuation.xy) * AngleAttenuation(spotDirection.xyz, lightDirection, distanceAndSpotAttenuation.zw));
+    half attenuation = half(DistanceAttenuation(distanceSqr, distanceAndSpotAttenuation.xy) * AngleAttenuation(spotDirection.xyz, lightDirection, distanceAndSpotAttenuation.zw));
 
     Light light;
     light.direction = lightDirection;
@@ -212,6 +300,7 @@ Light GetAdditionalPerObjectLight(int perObjectLightIndex, float3 positionWS)
 
     return light;
 }
+*/
 
 uint GetPerObjectLightIndexOffset()
 {
@@ -271,8 +360,68 @@ int GetPerObjectLightIndex(uint index)
 #endif
 }
 
+// zCubed Additions
+Light GetAdditionalLight(uint i, InputData inputData)
+{
+#if USE_CLUSTERED_LIGHTING
+    int lightIndex = i;
+#else
+    int lightIndex = GetPerObjectLightIndex(i);
+#endif
+    return GetAdditionalPerObjectLight(lightIndex, inputData);
+}
+
+Light GetAdditionalLight(uint i, float3 positionWS)
+{
+    InputData data = (InputData)0;
+    data.positionWS = positionWS;
+
+    return GetAdditionalLight(i, data);
+}
+
+Light GetAdditionalLight(uint i, InputData inputData, half4 shadowMask)
+{
+#if USE_CLUSTERED_LIGHTING
+    int lightIndex = i;
+#else
+    int lightIndex = GetPerObjectLightIndex(i);
+#endif
+    Light light = GetAdditionalPerObjectLight(lightIndex, inputData);
+
+    float3 positionWS = inputData.positionWS;
+
+#if USE_STRUCTURED_BUFFER_FOR_LIGHT_DATA
+    half4 occlusionProbeChannels = _AdditionalLightsBuffer[lightIndex].occlusionProbeChannels;
+#else
+    half4 occlusionProbeChannels = _AdditionalLightsOcclusionProbes[lightIndex];
+#endif
+    light.shadowAttenuation = AdditionalLightShadow(lightIndex, positionWS, light.direction, shadowMask, occlusionProbeChannels);
+#if defined(_LIGHT_COOKIES)
+    real3 cookieColor = SampleAdditionalLightCookie(lightIndex, positionWS);
+    light.color *= cookieColor;
+#endif
+
+    return light;
+}
+
+Light GetAdditionalLight(uint i, InputData inputData, half4 shadowMask, AmbientOcclusionFactor aoFactor)
+{
+    Light light = GetAdditionalLight(i, inputData, shadowMask);
+
+    #if defined(_SCREEN_SPACE_OCCLUSION) && !defined(_SURFACE_TYPE_TRANSPARENT)
+    if (IsLightingFeatureEnabled(DEBUGLIGHTINGFEATUREFLAGS_AMBIENT_OCCLUSION))
+    {
+        light.color *= aoFactor.directAmbientOcclusion;
+    }
+    #endif
+
+    return light;
+}
+// ================
+
 // Fills a light struct given a loop i index. This will convert the i
 // index to a perObjectLightIndex
+/*
 Light GetAdditionalLight(uint i, float3 positionWS)
 {
 #if USE_CLUSTERED_LIGHTING
@@ -319,6 +468,7 @@ Light GetAdditionalLight(uint i, InputData inputData, half4 shadowMask, AmbientO
 
     return light;
 }
+*/
 
 int GetAdditionalLightsCount()
 {

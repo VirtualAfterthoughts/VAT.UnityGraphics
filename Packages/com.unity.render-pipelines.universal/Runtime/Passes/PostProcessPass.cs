@@ -1,3 +1,5 @@
+//#define USE_OLD_URP
+
 using System.Runtime.CompilerServices;
 using UnityEngine.Experimental.Rendering;
 
@@ -447,6 +449,7 @@ namespace UnityEngine.Rendering.Universal.Internal
             }
 
             // Motion blur
+            /* zCubed: USE KMOTION INSTEAD
             if (useMotionBlur)
             {
                 using (new ProfilingScope(cmd, ProfilingSampler.Get(URPProfileId.MotionBlur)))
@@ -455,6 +458,7 @@ namespace UnityEngine.Rendering.Universal.Internal
                     Swap(ref renderer);
                 }
             }
+            */
 
             // Panini projection is done as a fullscreen pass after all depth-based effects are done
             // and before bloom kicks in
@@ -963,6 +967,7 @@ namespace UnityEngine.Rendering.Universal.Internal
         #endregion
 
         #region Motion Blur
+        /*
         static readonly int kShaderPropertyId_ViewProjM = Shader.PropertyToID("_ViewProjM");
         static readonly int kShaderPropertyId_PrevViewProjM = Shader.PropertyToID("_PrevViewProjM");
         static readonly int kShaderPropertyId_ViewProjMStereo = Shader.PropertyToID("_ViewProjMStereo");
@@ -1021,7 +1026,7 @@ namespace UnityEngine.Rendering.Universal.Internal
 
             Blit(cmd, source, BlitDstDiscardContent(cmd, destination), material, (int)m_MotionBlur.quality.value);
         }
-
+        */
         #endregion
 
         #region Panini Projection
@@ -1119,7 +1124,7 @@ namespace UnityEngine.Rendering.Universal.Internal
             float thresholdKnee = threshold * 0.5f; // Hardcoded soft knee
 
             // Material setup
-            float scatter = Mathf.Lerp(0.05f, 0.95f, m_Bloom.scatter.value);
+            float scatter = Mathf.Lerp(0.0f, 1.0f, m_Bloom.scatter.value);
             var bloomMaterial = m_Materials.bloom;
             bloomMaterial.SetVector(ShaderConstants._Params, new Vector4(scatter, clamp, threshold, thresholdKnee));
             CoreUtils.SetKeyword(bloomMaterial, ShaderKeywordStrings.BloomHQ, m_Bloom.highQualityFiltering.value);
@@ -1132,6 +1137,8 @@ namespace UnityEngine.Rendering.Universal.Internal
             Blit(cmd, source, ShaderConstants._BloomMipDown[0], bloomMaterial, 0);
 
             // Downsample - gaussian pyramid
+            
+            #if USE_OLD_URP
             int lastDown = ShaderConstants._BloomMipDown[0];
             for (int i = 1; i < mipCount; i++)
             {
@@ -1154,6 +1161,39 @@ namespace UnityEngine.Rendering.Universal.Internal
 
                 lastDown = mipDown;
             }
+            #else
+            // zCubed Additions
+            // Alternative downsampling using only one pass
+            int lastDown = ShaderConstants._BloomMipDown[0];
+            for (int i = 1; i < mipCount; i++)
+            {
+                tw = Mathf.Max(1, tw >> 1);
+                th = Mathf.Max(1, th >> 1);
+                int mipDown = ShaderConstants._BloomMipDown[i];
+                int mipUp = ShaderConstants._BloomMipUp[i];
+
+                desc.width = tw;
+                desc.height = th;
+
+                cmd.GetTemporaryRT(mipDown, desc, FilterMode.Bilinear);
+                cmd.GetTemporaryRT(mipUp, desc, FilterMode.Bilinear);
+
+                /*
+                const bool useOld = false;
+
+                if (useOld) 
+                {
+                    Blit(cmd, lastDown, mipUp, bloomMaterial, 1);
+                    Blit(cmd, mipUp, mipDown, bloomMaterial, 2);
+                } 
+                */
+                
+                Blit(cmd, lastDown, mipDown, bloomMaterial, 4);
+
+                lastDown = mipDown;
+            }
+            // ================
+            #endif
 
             // Upsample (bilinear by default, HQ filtering does bicubic instead
             for (int i = mipCount - 2; i >= 0; i--)
@@ -1252,6 +1292,12 @@ namespace UnityEngine.Rendering.Universal.Internal
         void SetupChromaticAberration(Material material)
         {
             material.SetFloat(ShaderConstants._Chroma_Params, m_ChromaticAberration.intensity.value * 0.05f);
+
+            // zCubed Additions
+            material.SetVector(ShaderConstants._ChromaRed, m_ChromaticAberration.chromaRed.value);
+            material.SetVector(ShaderConstants._ChromaGreen, m_ChromaticAberration.chromaGreen.value);
+            material.SetVector(ShaderConstants._ChromaBlue, m_ChromaticAberration.chromaBlue.value);
+            // ================
 
             if (m_ChromaticAberration.IsActive())
                 material.EnableKeyword(ShaderKeywordStrings.ChromaticAberration);
@@ -1693,6 +1739,12 @@ namespace UnityEngine.Rendering.Universal.Internal
 
             public static readonly int _ScalingSetupTexture = Shader.PropertyToID("_ScalingSetupTexture");
             public static readonly int _UpscaledTexture = Shader.PropertyToID("_UpscaledTexture");
+
+            // zCubed Additions
+            public static readonly int _ChromaRed = Shader.PropertyToID("_ChromaRed");
+            public static readonly int _ChromaGreen = Shader.PropertyToID("_ChromaGreen");
+            public static readonly int _ChromaBlue = Shader.PropertyToID("_ChromaBlue");
+            // ================
 
             public static int[] _BloomMipUp;
             public static int[] _BloomMipDown;

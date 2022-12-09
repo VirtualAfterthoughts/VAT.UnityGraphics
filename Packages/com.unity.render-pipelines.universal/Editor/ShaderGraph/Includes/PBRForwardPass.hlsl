@@ -70,6 +70,21 @@ half4 frag(PackedVaryings packedInput) : SV_TARGET
     UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(unpacked);
     SurfaceDescription surfaceDescription = BuildSurfaceDescription(unpacked);
 
+    // zCubed Additions
+    #if defined(LOD_FADE_CROSSFADE)
+    // zCubed: Unity flips the sign when blending in and out, we don't care but we need to invert the noise based on that
+    float blendCullFac = 0;
+    float blendNoise = InterleavedGradientNoise(unpacked.positionCS.xy, 0);
+    if (sign(unity_LODFade.x) == 1)
+        blendCullFac = unity_LODFade.x < blendNoise;
+    else
+        blendCullFac = abs(unity_LODFade.x) > blendNoise;
+
+    if (blendCullFac)
+        discard;
+    #endif
+    // ----------------
+
     #if _ALPHATEST_ON
         half alpha = surfaceDescription.Alpha;
         clip(alpha - surfaceDescription.AlphaClipThreshold);
@@ -108,6 +123,10 @@ half4 frag(PackedVaryings packedInput) : SV_TARGET
     surface.normalTS            = normalTS;
     surface.clearCoatMask       = 0;
     surface.clearCoatSmoothness = 1;
+
+    // zCubed Additions
+    surface.fluorescence        = 0;
+    // ================
 
     #ifdef _CLEARCOAT
         surface.clearCoatMask       = saturate(surfaceDescription.CoatMask);

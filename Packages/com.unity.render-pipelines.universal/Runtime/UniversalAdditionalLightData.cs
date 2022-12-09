@@ -1,5 +1,7 @@
 using System;
 
+using UnityEngine.Rendering.Universal.Additions;
+
 namespace UnityEngine.Rendering.Universal
 {
     /// <summary>Light Layers.</summary>
@@ -130,5 +132,57 @@ namespace UnityEngine.Rendering.Universal
             get => m_LightCookieOffset;
             set => m_LightCookieOffset = value;
         }
+
+
+        // zCubed Additions
+        [Tooltip("Toggles whether the volumetric intensity of this light should match the light intensity.")]
+        [SerializeField] bool m_VolumetricsSyncIntensity = true;
+        public bool volumetricsSyncIntensity
+        {
+            get => m_VolumetricsSyncIntensity;
+            set => m_VolumetricsSyncIntensity = value;
+        }
+
+        [Tooltip("Changes the volumetric intensity of this light.")]
+        [SerializeField][Min(0F)] float m_VolumetricsIntensity = 1.0f;
+        public float volumetricsIntensity
+        {
+            get => m_VolumetricsIntensity;
+            set => m_VolumetricsIntensity = value;
+        }
+
+        [Tooltip("Does this light contribute to volumetrics?")]
+        [SerializeField] bool m_VolumetricsEnabled = false;
+        public bool volumetricsEnabled
+        {
+            get => m_VolumetricsEnabled;
+            set => m_VolumetricsEnabled = value;
+        }
+
+        [Tooltip("How large the 'orb' of the light is.")]
+        [SerializeField] [Min(0F)] float m_SpecularRadius = 0.0f;
+        public float specularRadius
+        {
+            get => m_SpecularRadius;
+            set => m_SpecularRadius = value;
+        }
+
+        [Tooltip("Does this light emit UV light?")]
+        [SerializeField] bool m_Blacklight = false;
+        public bool blacklight
+        {
+            get => m_Blacklight;
+            set => m_Blacklight = value;
+        }
+
+
+        [Tooltip("How much we scatter the samples of shadows from this light.")]
+        [SerializeField] [Min(0F)] float m_PCFRadius = 2.0f;
+        public float PCFRadius
+        {
+            get => m_PCFRadius;
+            set => m_PCFRadius = value;
+        }
+        // ================
     }
 }

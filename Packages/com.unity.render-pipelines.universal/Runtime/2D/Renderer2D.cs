@@ -42,10 +42,10 @@ namespace UnityEngine.Rendering.Universal
         internal RenderTargetHandle colorGradingLutHandle { get => m_PostProcessPasses.colorGradingLut; }
 
         /// <inheritdoc/>
-        public override int SupportedCameraStackingTypes()
-        {
-            return 1 << (int)CameraRenderType.Base | 1 << (int)CameraRenderType.Overlay;
-        }
+        //public override int SupportedCameraStackingTypes()
+        //{
+        //    return 1 << (int)CameraRenderType.Base | 1 << (int)CameraRenderType.Overlay;
+        //}
 
         public Renderer2D(Renderer2DData data) : base(data)
         {

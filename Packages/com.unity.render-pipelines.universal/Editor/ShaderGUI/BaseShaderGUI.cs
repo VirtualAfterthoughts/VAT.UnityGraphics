@@ -38,7 +38,11 @@ namespace UnityEditor
             Alpha,   // Old school alpha-blending mode, fresnel does not affect amount of transparency
             Premultiply, // Physically plausible transparency mode, implemented as alpha pre-multiply
             Additive,
-            Multiply
+            Multiply,
+            
+            // zCubed Additions
+            Glass
+            // ----------------
         }
 
         public enum SmoothnessSource
@@ -307,7 +311,11 @@ namespace UnityEditor
 
             DrawFloatToggleProperty(Styles.alphaClipText, alphaClipProp);
 
-            if ((alphaClipProp != null) && (alphaCutoffProp != null) && (alphaClipProp.floatValue == 1))
+            bool overrideAlpha = false;
+            if (blendModeProp != null)
+                overrideAlpha = (BlendMode)blendModeProp.floatValue == BlendMode.Glass;
+
+            if ((alphaClipProp != null) && (alphaCutoffProp != null) && (alphaClipProp.floatValue == 1) || overrideAlpha)
                 materialEditor.ShaderProperty(alphaCutoffProp, Styles.alphaClipThresholdText, 1);
 
             DrawFloatToggleProperty(Styles.castShadowText, castShadowsProp);
@@ -358,7 +366,7 @@ namespace UnityEditor
             }
         }
 
-        protected virtual void DrawEmissionProperties(Material material, bool keyword)
+        protected virtual void DrawEmissionProperties(Material material, bool keyword, MaterialProperty emissionFalloffProp = null, MaterialProperty emissionMultiplyProp = null, MaterialProperty emissionOcclusionProp = null, bool shouldDrawOcclusionProp = false, MaterialProperty emissionGIMultiplierProp = null)
         {
             var emissive = true;
 
@@ -378,10 +386,40 @@ namespace UnityEditor
             // If texture was assigned and color was black set color to white
             if ((emissionMapProp != null) && (emissionColorProp != null))
             {
-                var hadEmissionTexture = emissionMapProp?.textureValue != null;
-                var brightness = emissionColorProp.colorValue.maxColorComponent;
-                if (emissionMapProp.textureValue != null && !hadEmissionTexture && brightness <= 0f)
-                    emissionColorProp.colorValue = Color.white;
+                using (new EditorGUI.DisabledScope(!emissive))
+                {
+                    var hadEmissionTexture = emissionMapProp?.textureValue != null;
+                    var brightness = emissionColorProp.colorValue.maxColorComponent;
+                    if (emissionMapProp.textureValue != null && !hadEmissionTexture && brightness <= 0f)
+                        emissionColorProp.colorValue = Color.white;
+
+                    // zCubed Additions
+                    EditorGUI.indentLevel += 2;
+
+                    if (emissionFalloffProp != null)
+                        materialEditor.RangeProperty(emissionFalloffProp, "Falloff");
+
+                    if (emissionOcclusionProp != null && shouldDrawOcclusionProp) 
+                        materialEditor.RangeProperty(emissionOcclusionProp, "Occlusion");
+
+
+                    bool multiplyAlbedo = material.IsKeywordEnabled("_ALBEDO_EMISSION_MULTIPLY");
+                    multiplyAlbedo = EditorGUILayout.Toggle("Multiply Albedo", multiplyAlbedo);
+
+                    CoreUtils.SetKeyword(material, "_ALBEDO_EMISSION_MULTIPLY", multiplyAlbedo);
+
+
+                    bool emissionIsFlourEnabled = material.IsKeywordEnabled("_EMISSION_IS_FLUORESCENCE");
+                    emissionIsFlourEnabled = EditorGUILayout.Toggle("Emission is Flourescence", emissionIsFlourEnabled);
+
+                    CoreUtils.SetKeyword(material, "_EMISSION_IS_FLUORESCENCE", emissionIsFlourEnabled);
+
+                    if (emissionGIMultiplierProp != null) 
+                        materialEditor.FloatProperty(emissionGIMultiplierProp, "GI Multiplier");
+
+                    EditorGUI.indentLevel -= 2;
+                    // ----------------
+                }
             }
 
             if (emissive)
@@ -391,17 +429,26 @@ namespace UnityEditor
             }
         }
 
-        public static void DrawNormalArea(MaterialEditor materialEditor, MaterialProperty bumpMap, MaterialProperty bumpMapScale = null)
+        public static void DrawNormalArea(MaterialEditor materialEditor, MaterialProperty bumpMap, MaterialProperty bumpMapScale = null, MaterialProperty bumpToOcclusion = null)
         {
             if (bumpMapScale != null)
             {
                 materialEditor.TexturePropertySingleLine(Styles.normalMapText, bumpMap,
                     bumpMap.textureValue != null ? bumpMapScale : null);
-                if (bumpMapScale.floatValue != 1 &&
-                    UnityEditorInternal.InternalEditorUtility.IsMobilePlatform(
-                        EditorUserBuildSettings.activeBuildTarget))
+
+                if (bumpMapScale.floatValue != 1 && UnityEditorInternal.InternalEditorUtility.IsMobilePlatform(EditorUserBuildSettings.activeBuildTarget))
                     if (materialEditor.HelpBoxWithButton(Styles.bumpScaleNotSupported, Styles.fixNormalNow))
                         bumpMapScale.floatValue = 1;
+
+                // zCubed Additions
+                // zCubed: Putting this here because it's part of the common lit shader
+                if (bumpMap.textureValue != null && bumpToOcclusion != null)
+                {
+                    EditorGUI.indentLevel += 2;
+                    materialEditor.RangeProperty(bumpToOcclusion, "Normal to AO");
+                    EditorGUI.indentLevel -= 2;
+                }
+                // ----------------
             }
             else
             {
@@ -540,6 +587,9 @@ namespace UnityEditor
             if (material.HasProperty("_BumpMap"))
                 CoreUtils.SetKeyword(material, ShaderKeywordStrings._NORMALMAP, material.GetTexture("_BumpMap"));
 
+            if (material.HasProperty("_BRDFMap"))
+                CoreUtils.SetKeyword(material, ShaderKeywordStrings._BRDFMAP, material.GetTexture("_BRDFMap"));
+
             // Shader specific keyword functions
             shadingModelFunc?.Invoke(material);
             shaderFunc?.Invoke(material);
@@ -603,6 +653,10 @@ namespace UnityEditor
                     material.DisableKeyword(ShaderKeywordStrings._ALPHAPREMULTIPLY_ON);
                     material.DisableKeyword(ShaderKeywordStrings._ALPHAMODULATE_ON);
 
+                    // zCubed Additions
+                    material.DisableKeyword(ShaderKeywordStrings._ALPHAGLASS_ON);
+                    // ----------------
+
                     // Specific Transparent Mode Settings
                     switch (blendMode)
                     {
@@ -628,6 +682,17 @@ namespace UnityEditor
                                 UnityEngine.Rendering.BlendMode.Zero);
                             material.EnableKeyword(ShaderKeywordStrings._ALPHAMODULATE_ON);
                             break;
+                        // zCubed Additions
+                        case BlendMode.Glass:
+                            SetMaterialSrcDstBlendProperties(material,
+                                UnityEngine.Rendering.BlendMode.One,
+                                UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                            material.EnableKeyword(ShaderKeywordStrings._ALPHAGLASS_ON);
+                            break;
+                        default:
+                            Debug.LogError($"Unimplemented blend mode {blendMode}");
+                            break;
+                        // ----------------
                     }
 
                     // General Transparent Material Settings

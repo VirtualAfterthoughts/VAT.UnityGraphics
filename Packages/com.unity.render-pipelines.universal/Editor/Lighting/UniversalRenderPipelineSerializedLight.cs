@@ -28,6 +28,18 @@ namespace UnityEditor.Rendering.Universal
         public SerializedProperty customShadowLayers { get; }
         public SerializedProperty shadowLayerMask { get; }
 
+        // zCubed Additions
+        public SerializedProperty volumetricsSyncIntensity { get; }
+        public SerializedProperty volumetricsIntensity { get; }
+        public SerializedProperty volumetricsEnabled { get; }
+
+        public SerializedProperty specularRadius { get; }
+        public SerializedProperty blacklight { get; }
+
+        public SerializedProperty pcfRadius { get; }
+        // ================
+
+
         /// <summary>Method that updates the <see cref="SerializedObject"/> of the Light and the Additional Light Data</summary>
         public void Update()
         {
@@ -68,6 +80,17 @@ namespace UnityEditor.Rendering.Universal
             lightLayerMask = serializedAdditionalDataObject.FindProperty("m_LightLayerMask");
             customShadowLayers = serializedAdditionalDataObject.FindProperty("m_CustomShadowLayers");
             shadowLayerMask = serializedAdditionalDataObject.FindProperty("m_ShadowLayerMask");
+
+            // zCubed Additions
+            volumetricsSyncIntensity = serializedAdditionalDataObject.FindProperty("m_VolumetricsSyncIntensity");
+            volumetricsIntensity = serializedAdditionalDataObject.FindProperty("m_VolumetricsIntensity");
+            volumetricsEnabled = serializedAdditionalDataObject.FindProperty("m_VolumetricsEnabled");
+
+            specularRadius = serializedAdditionalDataObject.FindProperty("m_SpecularRadius");
+            blacklight = serializedAdditionalDataObject.FindProperty("m_Blacklight");
+
+            pcfRadius = serializedAdditionalDataObject.FindProperty("m_PCFRadius");
+            // ================
 
             settings.ApplyModifiedProperties();
         }

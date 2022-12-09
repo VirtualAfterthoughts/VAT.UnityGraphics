@@ -27,6 +27,10 @@ namespace UnityEngine.Rendering.Universal.Internal
             public static int _AdditionalLightsSpotDir;
             public static int _AdditionalLightOcclusionProbeChannel;
             public static int _AdditionalLightsLayerMasks;
+
+            // zCubed Additions 
+            public static int _AdditionalLightsMiscInfo;
+            // ================
         }
 
         int m_AdditionalLightsBufferId;
@@ -36,11 +40,16 @@ namespace UnityEngine.Rendering.Universal.Internal
         private static readonly ProfilingSampler m_ProfilingSampler = new ProfilingSampler(k_SetupLightConstants);
         MixedLightingSetup m_MixedLightingSetup;
 
-        Vector4[] m_AdditionalLightPositions;
-        Vector4[] m_AdditionalLightColors;
-        Vector4[] m_AdditionalLightAttenuations;
-        Vector4[] m_AdditionalLightSpotDirections;
-        Vector4[] m_AdditionalLightOcclusionProbeChannels;
+        public Vector4[] m_AdditionalLightPositions;
+        public Vector4[] m_AdditionalLightColors;
+        public Vector4[] m_AdditionalLightAttenuations;
+        public Vector4[] m_AdditionalLightSpotDirections;
+        public Vector4[] m_AdditionalLightOcclusionProbeChannels;
+        
+        // zCubed Additions
+        Vector4[] m_AdditionalLightMiscInfo;
+        // ================
+
         float[] m_AdditionalLightsLayerMasks;  // Unity has no support for binding uint arrays. We will use asuint() in the shader instead.
 
         bool m_UseStructuredBuffer;
@@ -93,6 +102,7 @@ namespace UnityEngine.Rendering.Universal.Internal
         internal ForwardLights(InitParams initParams)
         {
             if (initParams.clusteredRendering) Assert.IsTrue(math.ispow2(initParams.tileSize));
+
             m_UseStructuredBuffer = RenderingUtils.useStructuredBuffer;
             m_UseClusteredRendering = initParams.clusteredRendering;
 
@@ -116,12 +126,21 @@ namespace UnityEngine.Rendering.Universal.Internal
                 LightConstantBuffer._AdditionalLightOcclusionProbeChannel = Shader.PropertyToID("_AdditionalLightsOcclusionProbes");
                 LightConstantBuffer._AdditionalLightsLayerMasks = Shader.PropertyToID("_AdditionalLightsLayerMasks");
 
+                // zCubed Additions
+                LightConstantBuffer._AdditionalLightsMiscInfo = Shader.PropertyToID("_AdditionalLightsMiscInfo");
+                // ================
+
                 int maxLights = UniversalRenderPipeline.maxVisibleAdditionalLights;
                 m_AdditionalLightPositions = new Vector4[maxLights];
                 m_AdditionalLightColors = new Vector4[maxLights];
                 m_AdditionalLightAttenuations = new Vector4[maxLights];
                 m_AdditionalLightSpotDirections = new Vector4[maxLights];
                 m_AdditionalLightOcclusionProbeChannels = new Vector4[maxLights];
+
+                // zCubed Additions
+                m_AdditionalLightMiscInfo = new Vector4[maxLights];
+                // ================
+
                 m_AdditionalLightsLayerMasks = new float[maxLights];
             }
 
@@ -353,6 +372,9 @@ namespace UnityEngine.Rendering.Universal.Internal
 
                 SetupShaderLightConstants(cmd, ref renderingData);
 
+                // zCubed Additions
+                CoreUtils.SetKeyword(cmd, "_URP_FORWARD_PLUS", false);
+
                 bool lightCountCheck = (renderingData.cameraData.renderer.stripAdditionalLightOffVariants && renderingData.lightData.supportsAdditionalLights) || additionalLightsCount > 0;
                 CoreUtils.SetKeyword(cmd, ShaderKeywordStrings.AdditionalLightsVertex,
                     lightCountCheck && additionalLightsPerVertex && !useClusteredRendering);
@@ -389,10 +411,14 @@ namespace UnityEngine.Rendering.Universal.Internal
             }
         }
 
-        void InitializeLightConstants(NativeArray<VisibleLight> lights, int lightIndex, out Vector4 lightPos, out Vector4 lightColor, out Vector4 lightAttenuation, out Vector4 lightSpotDir, out Vector4 lightOcclusionProbeChannel, out uint lightLayerMask)
+        void InitializeLightConstants(NativeArray<VisibleLight> lights, int lightIndex, out Vector4 lightPos, out Vector4 lightColor, out Vector4 lightAttenuation, out Vector4 lightSpotDir, out Vector4 lightOcclusionProbeChannel, out Vector4 miscInfo, out uint lightLayerMask)
         {
             UniversalRenderPipeline.InitializeLightConstants_Common(lights, lightIndex, out lightPos, out lightColor, out lightAttenuation, out lightSpotDir, out lightOcclusionProbeChannel);
             lightLayerMask = 0;
+            
+            // zCubed Additions
+            miscInfo = Vector4.zero;
+            // ================
 
             // When no lights are visible, main light will be set to -1.
             // In this case we initialize it to default values and return
@@ -422,6 +448,10 @@ namespace UnityEngine.Rendering.Universal.Internal
 
             var additionalLightData = light.GetUniversalAdditionalLightData();
             lightLayerMask = (uint)additionalLightData.lightLayerMask;
+
+            // zCubed Additions
+            miscInfo = new Vector4(additionalLightData.blacklight ? 1F : 0F, 0, 0, additionalLightData.specularRadius);
+            // ================
         }
 
         void SetupShaderLightConstants(CommandBuffer cmd, ref RenderingData renderingData)
@@ -436,9 +466,9 @@ namespace UnityEngine.Rendering.Universal.Internal
 
         void SetupMainLightConstants(CommandBuffer cmd, ref LightData lightData)
         {
-            Vector4 lightPos, lightColor, lightAttenuation, lightSpotDir, lightOcclusionChannel;
+            Vector4 lightPos, lightColor, lightAttenuation, lightSpotDir, lightOcclusionChannel, miscInfo;
             uint lightLayerMask;
-            InitializeLightConstants(lightData.visibleLights, lightData.mainLightIndex, out lightPos, out lightColor, out lightAttenuation, out lightSpotDir, out lightOcclusionChannel, out lightLayerMask);
+            InitializeLightConstants(lightData.visibleLights, lightData.mainLightIndex, out lightPos, out lightColor, out lightAttenuation, out lightSpotDir, out lightOcclusionChannel, out miscInfo, out lightLayerMask);
 
             cmd.SetGlobalVector(LightConstantBuffer._MainLightPosition, lightPos);
             cmd.SetGlobalVector(LightConstantBuffer._MainLightColor, lightColor);
@@ -467,6 +497,7 @@ namespace UnityEngine.Rendering.Universal.Internal
                             InitializeLightConstants(lights, i,
                                 out data.position, out data.color, out data.attenuation,
                                 out data.spotDirection, out data.occlusionProbeChannels,
+                                out data.miscInfo,
                                 out data.layerMask);
                             additionalLightsData[lightIter] = data;
                             lightIter++;
@@ -497,6 +528,7 @@ namespace UnityEngine.Rendering.Universal.Internal
                                 out m_AdditionalLightAttenuations[lightIter],
                                 out m_AdditionalLightSpotDirections[lightIter],
                                 out m_AdditionalLightOcclusionProbeChannels[lightIter],
+                                out m_AdditionalLightMiscInfo[lightIter],
                                 out lightLayerMask);
                             m_AdditionalLightsLayerMasks[lightIter] = Unity.Mathematics.math.asfloat(lightLayerMask);
                             lightIter++;
@@ -509,6 +541,7 @@ namespace UnityEngine.Rendering.Universal.Internal
                     cmd.SetGlobalVectorArray(LightConstantBuffer._AdditionalLightsSpotDir, m_AdditionalLightSpotDirections);
                     cmd.SetGlobalVectorArray(LightConstantBuffer._AdditionalLightOcclusionProbeChannel, m_AdditionalLightOcclusionProbeChannels);
                     cmd.SetGlobalFloatArray(LightConstantBuffer._AdditionalLightsLayerMasks, m_AdditionalLightsLayerMasks);
+                    cmd.SetGlobalVectorArray(LightConstantBuffer._AdditionalLightsMiscInfo, m_AdditionalLightMiscInfo);
                 }
 
                 cmd.SetGlobalVector(LightConstantBuffer._AdditionalLightsCount, new Vector4(lightData.maxPerObjectAdditionalLightsCount,

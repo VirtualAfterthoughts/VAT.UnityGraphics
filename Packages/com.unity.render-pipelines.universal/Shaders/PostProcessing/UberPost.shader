@@ -51,6 +51,11 @@ Shader "Hidden/Universal Render Pipeline/UberPost"
         float4 _Bloom_Texture_TexelSize;
         float4 _Dithering_Params;
 
+        // zCubed Additions
+        float4 _ChromaRed;
+        float4 _ChromaGreen;
+        float4 _ChromaBlue;
+
         #define DistCenter              _Distortion_Params1.xy
         #define DistAxis                _Distortion_Params1.zw
         #define DistTheta               _Distortion_Params2.x
@@ -124,6 +129,7 @@ Shader "Hidden/Universal Render Pipeline/UberPost"
 
             #if _CHROMATIC_ABERRATION
             {
+                /*
                 // Very fast version of chromatic aberration from HDRP using 3 samples and hardcoded
                 // spectral lut. Performs significantly better on lower end GPUs.
                 float2 coords = 2.0 * uv - 1.0;
@@ -135,6 +141,19 @@ Shader "Hidden/Universal Render Pipeline/UberPost"
                 half b = SAMPLE_TEXTURE2D_X(_SourceTex, sampler_LinearClamp, DistortUV(delta * 2.0 + uv)).z;
 
                 color = half3(r, g, b);
+                */
+
+                // zCubed Additions
+                // Replacement chromatic aberration that can use a matrix, slower but more configurable
+                float2 coords = 2.0 * uv - 1.0;
+                float2 end = uv - coords * dot(coords, coords) * ChromaAmount;
+                float2 delta = (end - uv) / 3.0;
+
+                half3 c0 = SAMPLE_TEXTURE2D_X(_SourceTex, sampler_LinearClamp, uvDistorted                ).rgb;
+                half3 c1 = SAMPLE_TEXTURE2D_X(_SourceTex, sampler_LinearClamp, DistortUV(delta + uv)      ).rgb;
+                half3 c2 = SAMPLE_TEXTURE2D_X(_SourceTex, sampler_LinearClamp, DistortUV(delta * 2.0 + uv)).rgb;
+
+                color = c0 * _ChromaRed + c1 * _ChromaGreen + c2 * _ChromaBlue;
             }
             #else
             {
@@ -167,8 +186,16 @@ Shader "Hidden/Universal Render Pipeline/UberPost"
                     bloom.xyz = DecodeRGBM(bloom);
                 }
 
-                bloom.xyz *= BloomIntensity;
-                color += bloom.xyz * BloomTint;
+                //bloom.xyz *= BloomIntensity;
+                
+                //#define USE_OLD_URP
+                #ifdef USE_OLD_URP
+                color += bloom.xyz * BloomIntensity * BloomTint;
+                #else
+                color = lerp(color, bloom.rgb * BloomTint, saturate(BloomIntensity));
+                #endif
+
+                //color = bloom.xyz * BloomTint;
 
                 #if defined(BLOOM_DIRT)
                 {
@@ -242,7 +269,7 @@ Shader "Hidden/Universal Render Pipeline/UberPost"
 
     SubShader
     {
-        Tags { "RenderType" = "Opaque" "RenderPipeline" = "UniversalPipeline"}
+        Tags { "RenderType" = "Opaque" "RenderPipeline" = "UniversalPipeline" }
         LOD 100
         ZTest Always ZWrite Off Cull Off
 

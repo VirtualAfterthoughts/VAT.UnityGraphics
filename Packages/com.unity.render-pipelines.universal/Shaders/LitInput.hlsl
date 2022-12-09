@@ -29,6 +29,17 @@ half _ClearCoatSmoothness;
 half _DetailAlbedoMapScale;
 half _DetailNormalMapScale;
 half _Surface;
+
+// zCubed Additions
+half _BumpToOcclusion;
+half _EmissionFalloff;
+half4 _OcclusionContribution;
+half _EmissionOcclusion;
+half _EmissionBakeMultipler;
+half _ProximityFadeBias;
+half _ProximityFadeDepth;
+// ----------------
+
 CBUFFER_END
 
 // NOTE: Do not ifdef the properties for dots instancing, but ifdef the actual usage.
@@ -50,6 +61,16 @@ UNITY_DOTS_INSTANCING_START(MaterialPropertyMetadata)
     UNITY_DOTS_INSTANCED_PROP(float , _DetailAlbedoMapScale)
     UNITY_DOTS_INSTANCED_PROP(float , _DetailNormalMapScale)
     UNITY_DOTS_INSTANCED_PROP(float , _Surface)
+
+    // zCubed Additions
+    UNITY_DOTS_INSTANCED_PROP(float , _BumpToOcclusion)
+    UNITY_DOTS_INSTANCED_PROP(float , _EmissionFalloff)
+    UNITY_DOTS_INSTANCED_PROP(float4, _OcclusionContribution)
+    UNITY_DOTS_INSTANCED_PROP(float, _EmissionOcclusion)
+    UNITY_DOTS_INSTANCED_PROP(float, _EmissionBakeMultipler)
+    UNITY_DOTS_INSTANCED_PROP(float, _ProximityFadeBias)
+    UNITY_DOTS_INSTANCED_PROP(float, _ProximityFadeDepth)
+    // ----------------
 UNITY_DOTS_INSTANCING_END(MaterialPropertyMetadata)
 
 #define _BaseColor              UNITY_ACCESS_DOTS_INSTANCED_PROP_FROM_MACRO(float4 , Metadata_BaseColor)
@@ -66,6 +87,16 @@ UNITY_DOTS_INSTANCING_END(MaterialPropertyMetadata)
 #define _DetailAlbedoMapScale   UNITY_ACCESS_DOTS_INSTANCED_PROP_FROM_MACRO(float  , Metadata_DetailAlbedoMapScale)
 #define _DetailNormalMapScale   UNITY_ACCESS_DOTS_INSTANCED_PROP_FROM_MACRO(float  , Metadata_DetailNormalMapScale)
 #define _Surface                UNITY_ACCESS_DOTS_INSTANCED_PROP_FROM_MACRO(float  , Metadata_Surface)
+
+// zCubed Additions
+#define _BumpToOcclusion        UNITY_ACCESS_DOTS_INSTANCED_PROP_FROM_MACRO(float  , Metadata_BumpToOcclusion)
+#define _EmissionFalloff        UNITY_ACCESS_DOTS_INSTANCED_PROP_FROM_MACRO(float  , Metadata_EmissionFalloff)
+#define _OcclusionContribution  UNITY_ACCESS_DOTS_INSTANCED_PROP_FROM_MACRO(float4 , Metadata_OcclusionContribution)
+#define _EmissionOcclusion      UNITY_ACCESS_DOTS_INSTANCED_PROP_FROM_MACRO(float , Metadata_EmissionOcclusion)
+#define _EmissionBakeMultipler  UNITY_ACCESS_DOTS_INSTANCED_PROP_FROM_MACRO(float , MetadataakeMultipler)
+#define _ProximityFadeBias      UNITY_ACCESS_DOTS_INSTANCED_PROP_FROM_MACRO(float , Metadata_ProximityFadeBias)
+#define _ProximityFadeDepth     UNITY_ACCESS_DOTS_INSTANCED_PROP_FROM_MACRO(float , Metadata_ProximityFadeDepth)
+// ----------------
 #endif
 
 TEXTURE2D(_ParallaxMap);        SAMPLER(sampler_ParallaxMap);
@@ -76,6 +107,10 @@ TEXTURE2D(_DetailNormalMap);    SAMPLER(sampler_DetailNormalMap);
 TEXTURE2D(_MetallicGlossMap);   SAMPLER(sampler_MetallicGlossMap);
 TEXTURE2D(_SpecGlossMap);       SAMPLER(sampler_SpecGlossMap);
 TEXTURE2D(_ClearCoatMap);       SAMPLER(sampler_ClearCoatMap);
+
+// zCubed Additions
+TEXTURE2D(_BRDFMap);            SAMPLER(sampler_BRDFMap);
+//-----------------
 
 #ifdef _SPECULAR_SETUP
     #define SAMPLE_METALLICSPECULAR(uv) SAMPLE_TEXTURE2D(_SpecGlossMap, sampler_SpecGlossMap, uv)
@@ -221,8 +256,29 @@ inline void InitializeStandardLitSurfaceData(float2 uv, out SurfaceData outSurfa
 
     outSurfaceData.smoothness = specGloss.a;
     outSurfaceData.normalTS = SampleNormal(uv, TEXTURE2D_ARGS(_BumpMap, sampler_BumpMap), _BumpScale);
-    outSurfaceData.occlusion = SampleOcclusion(uv);
+    //outSurfaceData.normalTS = SAMPLE_TEXTURE2D(_BumpMap, sampler_BumpMap, uv);
+
+    // URP Default
+    //outSurfaceData.occlusion = SampleOcclusion(uv);
+    // -----------
+
+    // zCubed Additions
+    // zCubed: My version of occlusion with "normal -> occlusion"
+    float2 normalABS = abs(outSurfaceData.normalTS.xy * outSurfaceData.normalTS.xy);
+    float normalAO = LerpOneTo((1 - (normalABS.x + normalABS.y)) * (outSurfaceData.normalTS.z), _BumpToOcclusion / 2.0);
+    outSurfaceData.occlusion = SampleOcclusion(uv) * normalAO;
+    // ----------------
+
     outSurfaceData.emission = SampleEmission(uv, _EmissionColor.rgb, TEXTURE2D_ARGS(_EmissionMap, sampler_EmissionMap));
+
+    // zCubed Additions
+#if defined(_EMISSION_IS_FLUORESCENCE)
+    outSurfaceData.fluorescence = outSurfaceData.emission;
+    outSurfaceData.emission = 0;
+#else
+    outSurfaceData.fluorescence = 0;
+#endif
+    // ----------------
 
 #if defined(_CLEARCOAT) || defined(_CLEARCOATMAP)
     half2 clearCoat = SampleClearCoat(uv);

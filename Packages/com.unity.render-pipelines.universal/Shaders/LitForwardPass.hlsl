@@ -33,7 +33,7 @@ struct Varyings
     float3 positionWS               : TEXCOORD1;
 #endif
 
-    float3 normalWS                 : TEXCOORD2;
+    half3 normalWS                 : TEXCOORD2;
 #if defined(REQUIRES_WORLD_SPACE_TANGENT_INTERPOLATOR)
     half4 tangentWS                : TEXCOORD3;    // xyz: tangent, w: sign
 #endif
@@ -121,6 +121,11 @@ void InitializeInputData(Varyings input, half3 normalTS, out InputData inputData
     inputData.vertexSH = input.vertexSH;
     #endif
     #endif
+
+    // zCubed Additions
+    inputData.occlusionContribution = 1 - _OcclusionContribution;
+    inputData.positionCS = input.positionCS;
+    // ----------------
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -198,6 +203,33 @@ half4 LitPassFragment(Varyings input) : SV_Target
     UNITY_SETUP_INSTANCE_ID(input);
     UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
 
+    // zCubed Additions
+#if defined(_PROXIMITY_FADE)
+    half3 viewVectorWS = _WorldSpaceCameraPos - input.positionWS;
+
+    float proximityCullFac = saturate((length(viewVectorWS) + _ProximityFadeBias) / _ProximityFadeDepth) < InterleavedGradientNoise(input.positionCS.xy, 0);
+    if (proximityCullFac)
+        discard;
+#endif
+
+#if defined(_URP_FORWARD_PLUS)
+    return float4(1, 0, 0, 1);
+#endif
+
+#if defined(LOD_FADE_CROSSFADE)
+    // zCubed: Unity flips the sign when blending in and out, we don't care but we need to invert the noise based on that
+    float blendCullFac = 0;
+    float blendNoise = InterleavedGradientNoise(input.positionCS.xy, 0);
+    if (sign(unity_LODFade.x) == 1)
+        blendCullFac = unity_LODFade.x < blendNoise;
+    else
+        blendCullFac = abs(unity_LODFade.x) > blendNoise;
+
+    if (blendCullFac)
+        discard;
+#endif
+    // ----------------
+
 #if defined(_PARALLAXMAP)
 #if defined(REQUIRES_TANGENT_SPACE_VIEW_DIR_INTERPOLATOR)
     half3 viewDirTS = input.viewDirTS;
@@ -215,14 +247,44 @@ half4 LitPassFragment(Varyings input) : SV_Target
     InitializeInputData(input, surfaceData.normalTS, inputData);
     SETUP_DEBUG_TEXTURE_DATA(inputData, input.uv, _BaseMap);
 
+    // zCubed Additions
+    
+    // The compiler should optimize this out if its unused
+    half NdotV = saturate(dot(inputData.normalWS, inputData.viewDirectionWS));
+    
+    #if defined(_EMISSION)
+    half fadeAbs = max(abs(_EmissionFalloff), 0.0001);
+    half flip = 10 * _EmissionFalloff < 0;
+
+    half emissionFade = lerp(1, pow(NdotV, fadeAbs * 2), saturate(fadeAbs));
+
+    emissionFade = abs(flip - emissionFade);
+    emissionFade = lerp(emissionFade, 1, fadeAbs < 0.001);
+
+    surfaceData.emission *= saturate(emissionFade);
+    
+    #if defined(_OCCLUSIONMAP)
+    surfaceData.emission *= lerp(1, surfaceData.occlusion, _EmissionOcclusion);
+    #endif
+
+    #endif
+    // ----------------
+
 #ifdef _DBUFFER
     ApplyDecalToSurfaceData(input.positionCS, surfaceData, inputData);
 #endif
 
     half4 color = UniversalFragmentPBR(inputData, surfaceData);
+    
+    // zCubed Additions
+    #if defined(_ALPHAGLASS_ON)
+    color.a = OutputAlpha(color.a, _Surface, lerp(0, _Cutoff, 1 - NdotV));
+    #else
+    color.a = OutputAlpha(color.a, _Surface);
+    #endif
 
     color.rgb = MixFog(color.rgb, inputData.fogCoord);
-    color.a = OutputAlpha(color.a, _Surface);
+    // ----------------
 
     return color;
 }

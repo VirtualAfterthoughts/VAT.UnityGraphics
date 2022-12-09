@@ -13,6 +13,11 @@ struct BRDFData
     half3 albedo;
     half3 diffuse;
     half3 specular;
+    
+    // zCubed Additions
+    half3 fluorescence;
+    // ================
+
     half reflectivity;
     half perceptualRoughness;
     half roughness;
@@ -51,13 +56,17 @@ half MetallicFromReflectivity(half reflectivity)
     return (reflectivity - kDielectricSpec.r) / oneMinusDielectricSpec;
 }
 
-inline void InitializeBRDFDataDirect(half3 albedo, half3 diffuse, half3 specular, half reflectivity, half oneMinusReflectivity, half smoothness, inout half alpha, out BRDFData outBRDFData)
+// zCubed Additions
+inline void InitializeBRDFDataDirect(half3 albedo, half3 diffuse, half3 specular, half reflectivity, half oneMinusReflectivity, half smoothness, half3 fluorescence, inout half alpha, out BRDFData outBRDFData)
 {
     outBRDFData = (BRDFData)0;
     outBRDFData.albedo = albedo;
     outBRDFData.diffuse = diffuse;
     outBRDFData.specular = specular;
     outBRDFData.reflectivity = reflectivity;
+
+    outBRDFData.fluorescence = 0;
+    outBRDFData.fluorescence = fluorescence;
 
     outBRDFData.perceptualRoughness = PerceptualSmoothnessToPerceptualRoughness(smoothness);
     outBRDFData.roughness           = max(PerceptualRoughnessToRoughness(outBRDFData.perceptualRoughness), HALF_MIN_SQRT);
@@ -72,14 +81,21 @@ inline void InitializeBRDFDataDirect(half3 albedo, half3 diffuse, half3 specular
 #endif
 }
 
+inline void InitializeBRDFDataDirect(half3 albedo, half3 diffuse, half3 specular, half reflectivity, half oneMinusReflectivity, half smoothness, inout half alpha, out BRDFData outBRDFData)
+{
+    InitializeBRDFDataDirect(albedo, diffuse, specular, reflectivity, oneMinusReflectivity, smoothness, 0.0, alpha, outBRDFData);
+}
+// ===============
+
 // Legacy: do not call, will not correctly initialize albedo property.
 inline void InitializeBRDFDataDirect(half3 diffuse, half3 specular, half reflectivity, half oneMinusReflectivity, half smoothness, inout half alpha, out BRDFData outBRDFData)
 {
     InitializeBRDFDataDirect(half3(0.0, 0.0, 0.0), diffuse, specular, reflectivity, oneMinusReflectivity, smoothness, alpha, outBRDFData);
 }
 
+// zCubed Additions
 // Initialize BRDFData for material, managing both specular and metallic setup using shader keyword _SPECULAR_SETUP.
-inline void InitializeBRDFData(half3 albedo, half metallic, half3 specular, half smoothness, inout half alpha, out BRDFData outBRDFData)
+inline void InitializeBRDFData(half3 albedo, half metallic, half3 specular, half smoothness, half3 fluorescence, inout half alpha, out BRDFData outBRDFData)
 {
 #ifdef _SPECULAR_SETUP
     half reflectivity = ReflectivitySpecular(specular);
@@ -93,13 +109,19 @@ inline void InitializeBRDFData(half3 albedo, half metallic, half3 specular, half
     half3 brdfSpecular = lerp(kDieletricSpec.rgb, albedo, metallic);
 #endif
 
-    InitializeBRDFDataDirect(albedo, brdfDiffuse, brdfSpecular, reflectivity, oneMinusReflectivity, smoothness, alpha, outBRDFData);
+    InitializeBRDFDataDirect(albedo, brdfDiffuse, brdfSpecular, reflectivity, oneMinusReflectivity, smoothness, fluorescence, alpha, outBRDFData);
+}
+
+inline void InitializeBRDFData(half3 albedo, half metallic, half3 specular, half smoothness, inout half alpha, out BRDFData outBRDFData)
+{
+    InitializeBRDFData(albedo, metallic, specular, smoothness, 0.0, alpha, outBRDFData);
 }
 
 inline void InitializeBRDFData(inout SurfaceData surfaceData, out BRDFData brdfData)
 {
-    InitializeBRDFData(surfaceData.albedo, surfaceData.metallic, surfaceData.specular, surfaceData.smoothness, surfaceData.alpha, brdfData);
+    InitializeBRDFData(surfaceData.albedo, surfaceData.metallic, surfaceData.specular, surfaceData.smoothness, surfaceData.fluorescence, surfaceData.alpha, brdfData);
 }
+// ===============
 
 half3 ConvertF0ForClearCoat15(half3 f0)
 {
@@ -202,9 +224,10 @@ half DirectBRDFSpecular(BRDFData brdfData, half3 normalWS, half3 lightDirectionW
     // We further optimize a few light invariant terms
     // brdfData.normalizationTerm = (roughness + 0.5) * 4.0 rewritten as roughness * 4.0 + 2.0 to a fit a MAD.
     float d = NoH * NoH * brdfData.roughness2MinusOne + 1.00001f;
+    half d2 = half(d * d);
 
     half LoH2 = LoH * LoH;
-    half specularTerm = brdfData.roughness2 / ((d * d) * max(0.1h, LoH2) * brdfData.normalizationTerm);
+    half specularTerm = brdfData.roughness2 / (d2 * max(half(0.1), LoH2) * brdfData.normalizationTerm);
 
     // On platforms where half actually means something, the denominator has a risk of overflow
     // clamp below was added specifically to "fix" that, but dx compiler (we convert bytecode to metal/gles)

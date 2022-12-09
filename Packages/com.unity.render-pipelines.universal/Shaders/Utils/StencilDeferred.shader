@@ -153,7 +153,7 @@ Shader "Hidden/Universal Render Pipeline/StencilDeferred"
 
     Light GetStencilLight(float3 posWS, float2 screen_uv, half4 shadowMask, uint materialFlags)
     {
-        Light unityLight;
+        Light unityLight = (Light)0;
 
         bool materialReceiveShadowsOff = (materialFlags & kMaterialFlagReceiveShadowsOff) != 0;
 
@@ -211,6 +211,10 @@ Shader "Hidden/Universal Render Pipeline/StencilDeferred"
             light.layerMask = lightLayerMask;
             unityLight = UnityLightFromPunctualLightDataAndWorldSpacePosition(light, posWS.xyz, shadowMask, _ShadowLightIndex, materialReceiveShadowsOff);
 
+            // zCubed Additions
+            unityLight.specularDirection = unityLight.direction;
+            // ----------------
+
             #ifdef _LIGHT_COOKIES
                 // Enable/disable is done toggling the keyword _LIGHT_COOKIES, but we could do a "static if" instead if required.
                 // if(_CookieLightIndex >= 0)
@@ -232,6 +236,7 @@ Shader "Hidden/Universal Render Pipeline/StencilDeferred"
                 }
             #endif
         #endif
+
         return unityLight;
     }
 

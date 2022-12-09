@@ -54,7 +54,7 @@ Light UnityLightFromPunctualLightDataAndWorldSpacePosition(PunctualLightData pun
 
     half4 probesOcclusion = shadowMask;
 
-    Light light;
+    Light light = (Light)0;
 
     float3 lightVector = punctualLightData.posWS - positionWS.xyz;
     float distanceSqr = max(dot(lightVector, lightVector), HALF_MIN);
@@ -68,6 +68,7 @@ Light UnityLightFromPunctualLightDataAndWorldSpacePosition(PunctualLightData pun
     light.color = punctualLightData.color.rgb;
 
     light.distanceAttenuation = attenuation;
+    light.shadowAttenuation = 1.0;
 
     [branch] if (materialFlagReceiveShadowsOff)
         light.shadowAttenuation = 1.0;
@@ -77,6 +78,10 @@ Light UnityLightFromPunctualLightDataAndWorldSpacePosition(PunctualLightData pun
     }
 
     light.layerMask = punctualLightData.layerMask;
+
+    // zCubed Additions
+    light.specularDirection = lightDirection;
+    // ----------------
 
     return light;
 }

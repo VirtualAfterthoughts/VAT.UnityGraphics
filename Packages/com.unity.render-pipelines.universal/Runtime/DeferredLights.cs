@@ -111,7 +111,7 @@ namespace UnityEngine.Rendering.Universal.Internal
     }
 
     // Manages tiled-based deferred lights.
-    internal class DeferredLights
+    public class DeferredLights
     {
         internal static class ShaderConstants
         {

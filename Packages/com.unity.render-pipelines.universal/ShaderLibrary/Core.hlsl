@@ -13,10 +13,15 @@
 #define USE_CLUSTERED_LIGHTING 0
 #endif
 
+// zCubed Additions
+
+// ----------------
+
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Packing.hlsl"
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Version.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Input.hlsl"
+#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/zCubed/Common.hlsl"
 
 #if !defined(SHADER_HINT_NICE_QUALITY)
     #if defined(SHADER_API_MOBILE) || defined(SHADER_API_SWITCH)
@@ -69,6 +74,8 @@
 
     #define SLICE_ARRAY_INDEX   unity_StereoEyeIndex
 
+    #define RWTEXTURE2D_X(textureName)                                      RWTexture2DArray<float4> textureName
+
     #define TEXTURE2D_X(textureName)                                        TEXTURE2D_ARRAY(textureName)
     #define TEXTURE2D_X_PARAM(textureName, samplerName)                     TEXTURE2D_ARRAY_PARAM(textureName, samplerName)
     #define TEXTURE2D_X_ARGS(textureName, samplerName)                      TEXTURE2D_ARRAY_ARGS(textureName, samplerName)
@@ -86,6 +93,8 @@
 
 #else
     #define SLICE_ARRAY_INDEX       0
+
+    #define RWTEXTURE2D_X(textureName)                                      RWTexture2D<float4> textureName
 
     #define TEXTURE2D_X(textureName)                                        TEXTURE2D(textureName)
     #define TEXTURE2D_X_PARAM(textureName, samplerName)                     TEXTURE2D_PARAM(textureName, samplerName)

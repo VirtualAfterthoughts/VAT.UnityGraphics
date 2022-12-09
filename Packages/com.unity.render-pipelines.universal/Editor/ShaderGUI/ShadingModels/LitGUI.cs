@@ -17,6 +17,14 @@ namespace UnityEditor.Rendering.Universal.ShaderGUI
             AlbedoAlpha,
         }
 
+        // zCubed Additions
+        public enum TransparencyMode
+        {
+            Normal,
+            Glass
+        }
+        // ----------------
+
         public static class Styles
         {
             public static GUIContent workflowModeText = EditorGUIUtility.TrTextContent("Workflow Mode",
@@ -63,6 +71,19 @@ namespace UnityEditor.Rendering.Universal.ShaderGUI
             public static GUIContent clearCoatSmoothnessText = EditorGUIUtility.TrTextContent("Smoothness",
                 "Specifies the smoothness of the coating." +
                 "\nActs as a multiplier of the clear coat map smoothness value or as a direct smoothness value if no map is specified.");
+
+            // zCubed Additions
+            public static GUIContent brdfText = EditorGUIUtility.TrTextContent("BRDF LUT",
+                "A lookup texture (LUT) for remapping light interaction over a surface.");
+
+            public static GUIContent packingModeText = EditorGUIUtility.TrTextContent("Packing Mode",
+                "Select a texture packing mode for compressing your material inputs.");
+
+            public static GUIContent emissionFalloffText = EditorGUIUtility.TrTextContent("Emission Falloff",
+                "Fades the emission over the edges of the mesh, negative values invert the fade.");
+
+            public static GUIContent blendModeText = EditorGUIUtility.TrTextContent("Blend Mode",
+                "Controls how blending is handled with transparency.");
         }
 
         public struct LitProperties
@@ -93,10 +114,24 @@ namespace UnityEditor.Rendering.Universal.ShaderGUI
             public MaterialProperty clearCoatMask;
             public MaterialProperty clearCoatSmoothness;
 
+            // zCubed Additions
+            public MaterialProperty brdfMap;
+            public MaterialProperty packingMode;
+            public MaterialProperty bumpToOcclusionProp;
+            public MaterialProperty emissionFalloffProp;
+            public MaterialProperty emissionMultiplyProp;
+            public MaterialProperty occlusionContributionProp;
+            public MaterialProperty emissionOcclusionProp;
+            public MaterialProperty emissionGIMultiplierProp;
+            public MaterialProperty proximityFadeBiasProp;
+            public MaterialProperty proximityFadeDepthProp;
+            // ----------------
+
             public LitProperties(MaterialProperty[] properties)
             {
                 // Surface Option Props
                 workflowMode = BaseShaderGUI.FindProperty("_WorkflowMode", properties, false);
+
                 // Surface Input Props
                 metallic = BaseShaderGUI.FindProperty("_Metallic", properties);
                 specColor = BaseShaderGUI.FindProperty("_SpecColor", properties, false);
@@ -110,6 +145,7 @@ namespace UnityEditor.Rendering.Universal.ShaderGUI
                 parallaxScaleProp = BaseShaderGUI.FindProperty("_Parallax", properties, false);
                 occlusionStrength = BaseShaderGUI.FindProperty("_OcclusionStrength", properties, false);
                 occlusionMap = BaseShaderGUI.FindProperty("_OcclusionMap", properties, false);
+
                 // Advanced Props
                 highlights = BaseShaderGUI.FindProperty("_SpecularHighlights", properties, false);
                 reflections = BaseShaderGUI.FindProperty("_EnvironmentReflections", properties, false);
@@ -118,13 +154,47 @@ namespace UnityEditor.Rendering.Universal.ShaderGUI
                 clearCoatMap = BaseShaderGUI.FindProperty("_ClearCoatMap", properties, false);
                 clearCoatMask = BaseShaderGUI.FindProperty("_ClearCoatMask", properties, false);
                 clearCoatSmoothness = BaseShaderGUI.FindProperty("_ClearCoatSmoothness", properties, false);
+
+                // zCubed Additions
+                // zCubed: Temp fix for my additions
+                try
+                {
+                    brdfMap = BaseShaderGUI.FindProperty("_BRDFMap", properties);
+                    packingMode = BaseShaderGUI.FindProperty("_PackingMode", properties);
+                    bumpToOcclusionProp = BaseShaderGUI.FindProperty("_BumpToOcclusion", properties);
+                    emissionFalloffProp = BaseShaderGUI.FindProperty("_EmissionFalloff", properties);
+                    emissionMultiplyProp = BaseShaderGUI.FindProperty("_EmissionMultiply", properties);
+                    occlusionContributionProp = BaseShaderGUI.FindProperty("_OcclusionContribution", properties);
+                    emissionOcclusionProp = BaseShaderGUI.FindProperty("_EmissionOcclusion", properties);
+                    emissionGIMultiplierProp = BaseShaderGUI.FindProperty("_EmissionBakeMultipler", properties);
+                    proximityFadeBiasProp = BaseShaderGUI.FindProperty("_ProximityFadeBias", properties);
+                    proximityFadeDepthProp = BaseShaderGUI.FindProperty("_ProximityFadeDepth", properties);
+                }
+                catch 
+                {
+                    brdfMap = null;
+                    packingMode = null;
+                    bumpToOcclusionProp = null;
+                    emissionFalloffProp = null;
+                    emissionMultiplyProp = null;
+                    occlusionContributionProp = null;
+                    emissionOcclusionProp = null;
+                    emissionGIMultiplierProp = null;
+                    proximityFadeBiasProp = null;
+                    proximityFadeDepthProp = null;
+                }
             }
         }
 
         public static void Inputs(LitProperties properties, MaterialEditor materialEditor, Material material)
         {
+            // zCubed Additions
+            if (BRDFLUTAvailable(material))
+                DoBRDFLUTArea(properties, materialEditor);
+
+            // Unity Defaults
             DoMetallicSpecularArea(properties, materialEditor, material);
-            BaseShaderGUI.DrawNormalArea(materialEditor, properties.bumpMapProp, properties.bumpScaleProp);
+            BaseShaderGUI.DrawNormalArea(materialEditor, properties.bumpMapProp, properties.bumpScaleProp, properties.bumpToOcclusionProp);
 
             if (HeightmapAvailable(material))
                 DoHeightmapArea(properties, materialEditor);
@@ -133,12 +203,39 @@ namespace UnityEditor.Rendering.Universal.ShaderGUI
             {
                 materialEditor.TexturePropertySingleLine(Styles.occlusionText, properties.occlusionMap,
                     properties.occlusionMap.textureValue != null ? properties.occlusionStrength : null);
+
+                // zCubed Additions
+                // zCubed: I know I shouldn't do this but I wanted efficiency
+                if (properties.occlusionContributionProp != null)
+                {
+                    using (new EditorGUI.DisabledScope(properties.occlusionMap.textureValue == null))
+                    {
+                        EditorGUI.indentLevel += 3;
+
+                        Vector4 contrib = properties.occlusionContributionProp.vectorValue;
+
+                        contrib.x = EditorGUILayout.Slider("Direct Diffuse", contrib.x, 0, 1);
+                        contrib.y = EditorGUILayout.Slider("Direct Specular", contrib.y, 0, 1);
+                        contrib.z = EditorGUILayout.Slider("Indirect Diffuse", contrib.z, 0, 1);
+                        contrib.w = EditorGUILayout.Slider("Indirect Specular", contrib.w, 0, 1);
+
+                        properties.occlusionContributionProp.vectorValue = contrib;
+
+                        EditorGUI.indentLevel -= 3;
+                    }
+                }
+                // ----------------
             }
 
             // Check that we have all the required properties for clear coat,
             // otherwise we will get null ref exception from MaterialEditor GUI helpers.
             if (ClearCoatAvailable(material))
                 DoClearCoat(properties, materialEditor, material);
+
+            // zCubed Additions
+            // Check if we can do proximity fading
+            if (ProximityFadeAvailable(material))
+                DoProximityFade(properties, materialEditor, material);
         }
 
         private static bool ClearCoatAvailable(Material material)
@@ -154,6 +251,45 @@ namespace UnityEditor.Rendering.Universal.ShaderGUI
             return material.HasProperty("_Parallax")
                 && material.HasProperty("_ParallaxMap");
         }
+
+        // zCubed Additions
+        private static bool ProximityFadeAvailable(Material material)
+        {
+            return material.HasProperty("_ProximityFadeDepth")
+                && material.HasProperty("_ProximityFadeBias");
+        }
+
+        public static void DoProximityFade(LitProperties properties, MaterialEditor materialEditor, Material material) 
+        {
+            bool enabled = EditorGUILayout.Toggle("Proximity Fade", material.IsKeywordEnabled("_PROXIMITY_FADE"));
+
+            if (enabled)
+                material.EnableKeyword("_PROXIMITY_FADE");
+            else
+                material.DisableKeyword("_PROXIMITY_FADE");
+
+            EditorGUI.BeginDisabledGroup(!enabled);
+            {
+                EditorGUI.indentLevel += 2;
+
+                materialEditor.FloatProperty(properties.proximityFadeDepthProp, "Start Distance");
+                materialEditor.FloatProperty(properties.proximityFadeBiasProp, "Bias (Offset)");
+
+                EditorGUI.indentLevel -= 2;
+            }
+            EditorGUI.EndDisabledGroup();
+        }
+
+        private static bool BRDFLUTAvailable(Material material)
+        {
+            return material.HasProperty("_BRDFMap");
+        }
+
+        public static void DoBRDFLUTArea(LitProperties properties, MaterialEditor materialEditor)
+        {
+            materialEditor.TexturePropertySingleLine(Styles.brdfText, properties.brdfMap);
+        }
+        //------------------
 
         private static void DoHeightmapArea(LitProperties properties, MaterialEditor materialEditor)
         {

@@ -278,9 +278,6 @@ namespace UnityEngine.Rendering.Universal
 
         [HideInInspector] [SerializeField] float m_Version = 2;
 
-        // These persist over multiple frames
-        [NonSerialized] MotionVectorsPersistentData m_MotionVectorsPersistentData = new MotionVectorsPersistentData();
-
         public float version => m_Version;
 
         static UniversalAdditionalCameraData s_DefaultAdditionalCameraData = null;
@@ -354,7 +351,7 @@ namespace UnityEngine.Rendering.Universal
 
         /// <summary>
         /// Returns the camera stack. Only valid for Base cameras.
-        /// Will return null if it is not a Base camera.
+        /// Overlay cameras have no stack and will return null.
         /// <seealso cref="CameraRenderType"/>.
         /// </summary>
         public List<Camera> cameraStack
@@ -368,7 +365,7 @@ namespace UnityEngine.Rendering.Universal
                     return null;
                 }
 
-                if (!scriptableRenderer.SupportsCameraStackingType(CameraRenderType.Base))
+                if (scriptableRenderer.supportedRenderingFeatures.cameraStacking == false)
                 {
                     var camera = gameObject.GetComponent<Camera>();
                     Debug.LogWarning(string.Format("{0}: This camera has a ScriptableRenderer that doesn't support camera stacking. Camera stack is null.", camera.name));
@@ -554,11 +551,6 @@ namespace UnityEngine.Rendering.Universal
         }
 
         /// <summary>
-        /// Motion data that persists over a frame.
-        /// </summary>
-        internal MotionVectorsPersistentData motionVectorsPersistentData => m_MotionVectorsPersistentData;
-
-        /// <summary>
         /// Returns true if this camera should automatically replace NaN/Inf in shaders by a black pixel to avoid breaking some effects.
         /// </summary>
         public bool stopNaN
@@ -584,6 +576,57 @@ namespace UnityEngine.Rendering.Universal
             get => m_AllowXRRendering;
             set => m_AllowXRRendering = value;
         }
+
+        // zCubed Additions
+        [SerializeField] bool m_RenderVolumetrics = false;
+        public bool renderVolumetrics
+        {
+            get => m_RenderVolumetrics;
+            set => m_RenderVolumetrics = value;
+        }
+
+        [SerializeField] Additions.RenderVolumetrics.BufferQuality m_VolumetricsResolution = Additions.RenderVolumetrics.BufferQuality.Medium;
+        public Additions.RenderVolumetrics.BufferQuality volumetricsResolution
+        {
+            get => m_VolumetricsResolution;
+            set => m_VolumetricsResolution = value;
+        }
+
+        [SerializeField] int m_VolumetricsSlices = 128;
+        public int volumetricsSlices
+        {
+            get => m_VolumetricsSlices;
+            set => m_VolumetricsSlices = value;
+        }
+
+        [SerializeField] int m_VolumetricsSteps = 64;
+        public int volumetricsSteps
+        {
+            get => m_VolumetricsSteps;
+            set => m_VolumetricsSteps = value;
+        }
+
+        [SerializeField] float m_VolumetricsFar = 10.0f;
+        public float volumetricsFar
+        {
+            get => m_VolumetricsFar;
+            set => m_VolumetricsFar = value;
+        }
+
+        [SerializeField] Additions.RenderVolumetrics.BufferQuality m_VolumetricsQuality = Additions.RenderVolumetrics.BufferQuality.Medium;
+        public Additions.RenderVolumetrics.BufferQuality volumetricsQuality
+        {
+            get => m_VolumetricsQuality;
+            set => m_VolumetricsQuality = value;
+        }
+
+        [SerializeField] Additions.RenderVolumetrics.RenderFlags m_VolumetricsRenderFlags = Additions.RenderVolumetrics.RenderFlags.All;
+        public Additions.RenderVolumetrics.RenderFlags volumetricsRenderFlags
+        {
+            get => m_VolumetricsRenderFlags;
+            set => m_VolumetricsRenderFlags = value;
+        }
+        // ================
 
         public void OnBeforeSerialize()
         {

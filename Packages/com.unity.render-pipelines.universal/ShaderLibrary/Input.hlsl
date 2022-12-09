@@ -36,7 +36,7 @@ struct InputData
 {
     float3  positionWS;
     float4  positionCS;
-    float3   normalWS;
+    half3   normalWS;
     half3   viewDirectionWS;
     float4  shadowCoord;
     half    fogCoord;
@@ -70,6 +70,10 @@ struct InputData
     // w = loaded mip level
     float4 mipInfo;
     #endif
+
+    // zCubed Additions
+    half4 occlusionContribution; // For backwards compat this is OneMinus'ed!
+    // ----------------
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -110,6 +114,12 @@ float2 _AdditionalLightsTileScale;
 uint _AdditionalLightsTileCountX;
 #endif
 
+// zCubed Additions
+#if USE_FORWARD_PLUS_LIGHTING
+
+#endif
+// ----------------
+
 #if USE_STRUCTURED_BUFFER_FOR_LIGHT_DATA
 StructuredBuffer<LightData> _AdditionalLightsBuffer;
 StructuredBuffer<int> _AdditionalLightsIndices;
@@ -124,6 +134,11 @@ half4 _AdditionalLightsAttenuation[MAX_VISIBLE_LIGHTS];
 half4 _AdditionalLightsSpotDir[MAX_VISIBLE_LIGHTS];
 half4 _AdditionalLightsOcclusionProbes[MAX_VISIBLE_LIGHTS];
 float _AdditionalLightsLayerMasks[MAX_VISIBLE_LIGHTS]; // we want uint[] but Unity api does not support it.
+
+// zCubed Additions
+half4 _AdditionalLightsMiscInfo[MAX_VISIBLE_LIGHTS];
+// ================
+
 #ifndef SHADER_API_GLES3
 CBUFFER_END
 #endif

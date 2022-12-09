@@ -141,20 +141,10 @@ namespace UnityEngine.Rendering.Universal
         private UniversalRenderPipelineGlobalSettings m_GlobalSettings;
         public override RenderPipelineGlobalSettings defaultSettings => m_GlobalSettings;
 
-        // Reference to the asset associated with the pipeline.
-        // When a pipeline asset is switched in `GraphicsSettings`, the `UniversalRenderPipelineCore.asset` member
-        // becomes unreliable for the purpose of pipeline and renderer clean-up in the `Dispose` call from
-        // `RenderPipelineManager.CleanupRenderPipeline`.
-        // This field provides the correct reference for the purpose of cleaning up the renderers on this pipeline
-        // asset.
-        private readonly UniversalRenderPipelineAsset pipelineAsset;
-
-        /// <inheritdoc/>
-        public override string ToString() => pipelineAsset?.ToString();
+        public const int MAIN_SHADOW_BITS = 32;
 
         public UniversalRenderPipeline(UniversalRenderPipelineAsset asset)
         {
-            pipelineAsset = asset;
 #if UNITY_EDITOR
             m_GlobalSettings = UniversalRenderPipelineGlobalSettings.Ensure();
 #else
@@ -198,10 +188,7 @@ namespace UnityEngine.Rendering.Universal
 
             base.Dispose(disposing);
 
-            pipelineAsset.DestroyRenderers();
-
             Shader.globalRenderPipeline = "";
-
             SupportedRenderingFeatures.active = new SupportedRenderingFeatures();
             ShaderData.instance.Dispose();
             DeferredShaderData.instance.Dispose();
@@ -450,8 +437,8 @@ namespace UnityEngine.Rendering.Universal
         }
 
         /// <summary>
-        /// Renders a camera stack. This method calls RenderSingleCamera for each valid camera in the stack.
-        /// The last camera resolves the final target to screen.
+        // Renders a camera stack. This method calls RenderSingleCamera for each valid camera in the stack.
+        // The last camera resolves the final target to screen.
         /// </summary>
         /// <param name="context">Render context used to record commands during execution.</param>
         /// <param name="camera">Camera to render.</param>
@@ -465,10 +452,9 @@ namespace UnityEngine.Rendering.Universal
             if (baseCameraAdditionalData != null && baseCameraAdditionalData.renderType == CameraRenderType.Overlay)
                 return;
 
-            // Renderer contains a stack if it has additional data and the renderer supports stacking
-            // The renderer is checked if it supports Base camera. Since Base is the only relevant type at this moment.
+            // renderer contains a stack if it has additional data and the renderer supports stacking
             var renderer = baseCameraAdditionalData?.scriptableRenderer;
-            bool supportsCameraStacking = renderer != null && renderer.SupportsCameraStackingType(CameraRenderType.Base);
+            bool supportsCameraStacking = renderer != null && renderer.supportedRenderingFeatures.cameraStacking;
             List<Camera> cameraStack = (supportsCameraStacking) ? baseCameraAdditionalData?.cameraStack : null;
 
             bool anyPostProcessingEnabled = baseCameraAdditionalData != null && baseCameraAdditionalData.renderPostProcessing;
@@ -495,29 +481,21 @@ namespace UnityEngine.Rendering.Universal
                     {
                         currCamera.TryGetComponent<UniversalAdditionalCameraData>(out var data);
 
-                        // Checking if the base and the overlay camera is of the same renderer type.
+                        if (data == null || data.renderType != CameraRenderType.Overlay)
+                        {
+                            Debug.LogWarning(string.Format("Stack can only contain Overlay cameras. {0} will skip rendering.", currCamera.name));
+                            continue;
+                        }
+
                         var currCameraRendererType = data?.scriptableRenderer.GetType();
                         if (currCameraRendererType != baseCameraRendererType)
                         {
-                            Debug.LogWarning("Only cameras with compatible renderer types can be stacked. " +
-                                             $"The camera: {currCamera.name} are using the renderer {currCameraRendererType.Name}, " +
-                                             $"but the base camera: {baseCamera.name} are using {baseCameraRendererType.Name}. Will skip rendering");
-                            continue;
-                        }
-
-                        var overlayRenderer = data.scriptableRenderer;
-                        // Checking if they are the same renderer type but just not supporting Overlay
-                        if ((overlayRenderer.SupportedCameraStackingTypes() & 1 << (int)CameraRenderType.Overlay) == 0)
-                        {
-                            Debug.LogWarning($"The camera: {currCamera.name} is using a renderer of type {renderer.GetType().Name} which does not support Overlay cameras in it's current state.");
-                            continue;
-                        }
-
-                        if (data == null || data.renderType != CameraRenderType.Overlay)
-                        {
-                            Debug.LogWarning($"Stack can only contain Overlay cameras. The camera: {currCamera.name} " +
-                                             $"has a type {data.renderType} that is not supported. Will skip rendering.");
-                            continue;
+                            var renderer2DType = typeof(Renderer2D);
+                            if (currCameraRendererType != renderer2DType && baseCameraRendererType != renderer2DType)
+                            {
+                                Debug.LogWarning(string.Format("Only cameras with compatible renderer types can be stacked. {0} will skip rendering", currCamera.name));
+                                continue;
+                            }
                         }
 
                         anyPostProcessingEnabled |= data.renderPostProcessing;
@@ -1102,7 +1080,7 @@ namespace UnityEngine.Rendering.Universal
             shadowData.supportsAdditionalLightShadows = SystemInfo.supportsShadows && settings.supportsAdditionalLightShadows && additionalLightsCastShadows;
             shadowData.additionalLightsShadowmapWidth = shadowData.additionalLightsShadowmapHeight = settings.additionalLightsShadowmapResolution;
             shadowData.supportsSoftShadows = settings.supportsSoftShadows && (shadowData.supportsMainLightShadows || shadowData.supportsAdditionalLightShadows);
-            shadowData.shadowmapDepthBufferBits = 16;
+            shadowData.shadowmapDepthBufferBits = MAIN_SHADOW_BITS;
 
             // This will be setup in AdditionalLightsShadowCasterPass.
             shadowData.isKeywordAdditionalLightShadowsEnabled = false;

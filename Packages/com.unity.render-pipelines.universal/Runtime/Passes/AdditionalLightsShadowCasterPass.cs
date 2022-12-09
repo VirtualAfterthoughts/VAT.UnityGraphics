@@ -20,6 +20,10 @@ namespace UnityEngine.Rendering.Universal.Internal
             public static int _AdditionalShadowOffset3;
             public static int _AdditionalShadowFadeParams;
             public static int _AdditionalShadowmapSize;
+
+            // zCubed Additions
+            public static int _AdditionalPCSSParams;
+            // ================
         }
 
         internal struct ShadowResolutionRequest
@@ -58,10 +62,9 @@ namespace UnityEngine.Rendering.Universal.Internal
         static int m_AdditionalShadowParams_SSBO;
         bool m_UseStructuredBuffer;
 
-        const int k_ShadowmapBufferBits = 16;
+        const int k_ShadowmapBufferBits = 32;
         private RenderTargetHandle m_AdditionalLightsShadowmap;
         internal RenderTexture m_AdditionalLightsShadowmapTexture;
-
 
         float m_MaxShadowDistanceSq;
         float m_CascadeBorder;
@@ -81,6 +84,14 @@ namespace UnityEngine.Rendering.Universal.Internal
         ShadowResolutionRequest[] m_SortedShadowResolutionRequests = null;
         int[] m_VisibleLightIndexToSortedShadowResolutionRequestsFirstSliceIndex = null;                 // for each visible light, store the index of its first shadow slice in m_SortedShadowResolutionRequests (for quicker access)
         List<RectInt> m_UnusedAtlasSquareAreas = new List<RectInt>();                                    // this list tracks space available in the atlas
+
+        // zCubed Additions
+        public RenderTexture additionalLightsShadowmapTexture { get => m_AdditionalLightsShadowmapTexture; }
+        public Vector4[] additionalLightIndexToShadowParams { get => m_AdditionalLightIndexToShadowParams; }
+        public Matrix4x4[] additionalLightShadowSliceIndexTo_WorldShadowMatrix { get => m_AdditionalLightShadowSliceIndexTo_WorldShadowMatrix; }
+
+        Vector4[] m_AdditionalLightPCSSParams; 
+        // ================
 
         bool m_CreateEmptyShadowmap;
 
@@ -111,6 +122,10 @@ namespace UnityEngine.Rendering.Universal.Internal
             AdditionalShadowsConstantBuffer._AdditionalShadowOffset3 = Shader.PropertyToID("_AdditionalShadowOffset3");
             AdditionalShadowsConstantBuffer._AdditionalShadowFadeParams = Shader.PropertyToID("_AdditionalShadowFadeParams");
             AdditionalShadowsConstantBuffer._AdditionalShadowmapSize = Shader.PropertyToID("_AdditionalShadowmapSize");
+
+            // zCubed Additions
+            AdditionalShadowsConstantBuffer._AdditionalPCSSParams = Shader.PropertyToID("_AdditionalPCSSParams");
+
             m_AdditionalLightsShadowmap.Init("_AdditionalLightsShadowmapTexture");
 
             m_AdditionalLightsWorldToShadow_SSBO = Shader.PropertyToID("_AdditionalLightsWorldToShadow_SSBO");
@@ -132,6 +147,10 @@ namespace UnityEngine.Rendering.Universal.Internal
             m_VisibleLightIndexToSortedShadowResolutionRequestsFirstSliceIndex = new int[maxVisibleLights];
             m_AdditionalLightIndexToShadowParams = new Vector4[maxAdditionalLightShadowParams];
             m_VisibleLightIndexToCameraSquareDistance = new float[maxVisibleLights];
+
+            // zCubed Additions
+            m_AdditionalLightPCSSParams = new Vector4[maxAdditionalLightShadowParams];
+            // ================
 
             if (!m_UseStructuredBuffer)
             {
@@ -194,6 +213,9 @@ namespace UnityEngine.Rendering.Universal.Internal
             return softShadow ? kMinimumPunctualLightSoftShadowResolution : kMinimumPunctualLightHardShadowResolution;
         }
 
+        static bool m_IssuedMessageAboutPointLightHardShadowResolutionTooSmall = false;
+        static bool m_IssuedMessageAboutPointLightSoftShadowResolutionTooSmall = false;
+
         // Returns the guard angle that must be added to a point light shadow face frustum angle
         // in order to avoid shadows missing at the boundaries between cube faces.
         internal static float GetPointLightShadowFrustumFovBiasInDegrees(int shadowSliceResolution, bool shadowFiltering)
@@ -214,13 +236,11 @@ namespace UnityEngine.Rendering.Universal.Internal
             // We can see that the guard angle is roughly proportional to the inverse of resolution https://docs.google.com/spreadsheets/d/1QrIZJn18LxVKq2-K1XS4EFRZcZdZOJTTKKhDN8Z1b_s
             if (shadowSliceResolution <= kMinimumPunctualLightHardShadowResolution)
             {
-                #if DEVELOPMENT_BUILD
                 if (!m_IssuedMessageAboutPointLightHardShadowResolutionTooSmall)
                 {
                     Debug.LogWarning("Too many additional punctual lights shadows, increase shadow atlas size or remove some shadowed lights");
                     m_IssuedMessageAboutPointLightHardShadowResolutionTooSmall = true; // Only output this once per shadow requests configuration
                 }
-                #endif
             }
             else if (shadowSliceResolution <= 16)
                 fovBias = 43.0f;
@@ -241,14 +261,12 @@ namespace UnityEngine.Rendering.Universal.Internal
             {
                 if (shadowSliceResolution <= kMinimumPunctualLightSoftShadowResolution)
                 {
-                    #if DEVELOPMENT_BUILD
                     if (!m_IssuedMessageAboutPointLightSoftShadowResolutionTooSmall)
                     {
                         Debug.LogWarning("Too many additional punctual lights shadows to use Soft Shadows. Increase shadow atlas size, remove some shadowed lights or use Hard Shadows.");
                         // With such small resolutions no fovBias can give good visual results
                         m_IssuedMessageAboutPointLightSoftShadowResolutionTooSmall = true; // Only output this once per shadow requests configuration
                     }
-                    #endif
                 }
                 else if (shadowSliceResolution <= 32)
                     fovBias += 9.35f;
@@ -269,6 +287,8 @@ namespace UnityEngine.Rendering.Universal.Internal
 
             return fovBias;
         }
+
+        bool m_IssuedMessageAboutShadowSlicesTooMany = false;
 
         // Adapted from InsertionSort() in com.unity.render-pipelines.high-definition/Runtime/Lighting/Shadow/HDDynamicShadowAtlas.cs
         // Sort array in decreasing requestedResolution order,
@@ -400,7 +420,6 @@ namespace UnityEngine.Rendering.Universal.Internal
                     shadowSlicesScaleFactor *= 2;
             }
 
-            #if DEVELOPMENT_BUILD
             if (!m_IssuedMessageAboutShadowMapsTooBig && tooManyShadows)
             {
                 Debug.LogWarning($"Too many additional punctual lights shadows. URP tried reducing shadow resolutions by {shadowSlicesScaleFactor} but it was still too much. Increase shadow atlas size, decrease big shadow resolutions, or reduce the number of shadow maps active in the same frame (currently was {totalShadowSlicesCount}).");
@@ -412,17 +431,11 @@ namespace UnityEngine.Rendering.Universal.Internal
                 Debug.Log($"Reduced additional punctual light shadows resolution by {shadowSlicesScaleFactor} to make {totalShadowSlicesCount} shadow maps fit in the {atlasSize}x{atlasSize} shadow atlas. To avoid this, increase shadow atlas size, decrease big shadow resolutions, or reduce the number of shadow maps active in the same frame");
                 m_IssuedMessageAboutShadowMapsRescale = true; // Only output this once per shadow requests configuration
             }
-            #endif
         }
 
-        #if DEVELOPMENT_BUILD
-        private bool m_IssuedMessageAboutShadowSlicesTooMany = false;
-        private bool m_IssuedMessageAboutShadowMapsRescale = false;
-        private bool m_IssuedMessageAboutShadowMapsTooBig = false;
-        private bool m_IssuedMessageAboutRemovedShadowSlices = false;
-        private static bool m_IssuedMessageAboutPointLightHardShadowResolutionTooSmall = false;
-        private static bool m_IssuedMessageAboutPointLightSoftShadowResolutionTooSmall = false;
-        #endif
+        bool m_IssuedMessageAboutShadowMapsRescale = false;
+        bool m_IssuedMessageAboutShadowMapsTooBig = false;
+        bool m_IssuedMessageAboutRemovedShadowSlices = false;
 
         Dictionary<int, ulong> m_ShadowRequestsHashes = new Dictionary<int, ulong>();  // used to keep track of changes in the shadow requests and shadow atlas configuration (per camera)
 
@@ -501,7 +514,6 @@ namespace UnityEngine.Rendering.Universal.Internal
 
             m_ShadowResolutionRequests.Clear();
 
-            #if DEVELOPMENT_BUILD
             // Check changes in the shadow requests and shadow atlas configuration - compute shadow request/configuration hash
             if (!renderingData.cameraData.isPreviewCamera)
             {
@@ -512,7 +524,7 @@ namespace UnityEngine.Rendering.Universal.Internal
                 {
                     m_ShadowRequestsHashes[renderingData.cameraData.camera.GetHashCode()] = newShadowRequestHash;
 
-                    // config changed ; reset error message flags as we might need to issue those messages again
+                    // congif changed ; reset error message flags as we might need to issue those messages again
                     m_IssuedMessageAboutPointLightHardShadowResolutionTooSmall = false;
                     m_IssuedMessageAboutPointLightSoftShadowResolutionTooSmall = false;
                     m_IssuedMessageAboutShadowMapsRescale = false;
@@ -521,7 +533,6 @@ namespace UnityEngine.Rendering.Universal.Internal
                     m_IssuedMessageAboutRemovedShadowSlices = false;
                 }
             }
-            #endif
 
             if (m_VisibleLightIndexToAdditionalLightIndex.Length < visibleLights.Length)
             {
@@ -593,8 +604,6 @@ namespace UnityEngine.Rendering.Universal.Internal
                 else // Skip shadow requests for this light ; their resolution is too small to look any good
                     totalShadowSlicesCount -= GetPunctualLightShadowSlicesCount(m_SortedShadowResolutionRequests[totalShadowSlicesCount - 1].pointLightShadow ? LightType.Point : LightType.Spot);
             }
-
-            #if DEVELOPMENT_BUILD
             if (totalShadowSlicesCount < totalShadowResolutionRequestsCount)
             {
                 if (!m_IssuedMessageAboutRemovedShadowSlices)
@@ -603,8 +612,6 @@ namespace UnityEngine.Rendering.Universal.Internal
                     m_IssuedMessageAboutRemovedShadowSlices = true;  // Only output this once per shadow requests configuration
                 }
             }
-            #endif
-
             for (int sortedArrayIndex = totalShadowSlicesCount; sortedArrayIndex < m_SortedShadowResolutionRequests.Length; ++sortedArrayIndex)
                 m_SortedShadowResolutionRequests[sortedArrayIndex].requestedResolution = 0; // Reset entries that we cannot fit in the atlas
 
@@ -652,14 +659,12 @@ namespace UnityEngine.Rendering.Universal.Internal
 
                 if ((m_ShadowSliceToAdditionalLightIndex.Count + perLightShadowSlicesCount) > totalShadowSlicesCount && IsValidShadowCastingLight(ref renderingData.lightData, visibleLightIndex))
                 {
-                    #if DEVELOPMENT_BUILD
                     if (!m_IssuedMessageAboutShadowSlicesTooMany)
                     {
                         // This case can especially happen in Deferred, where there can be a high number of visibleLights
                         Debug.Log($"There are too many shadowed additional punctual lights active at the same time, URP will not render all the shadows. To ensure all shadows are rendered, reduce the number of shadowed additional lights in the scene ; make sure they are not active at the same time ; or replace point lights by spot lights (spot lights use less shadow maps than point lights).");
                         m_IssuedMessageAboutShadowSlicesTooMany = true; // Only output this once
                     }
-                    #endif
                     break;
                 }
 
@@ -706,6 +711,13 @@ namespace UnityEngine.Rendering.Universal.Internal
                                     Vector4 shadowParams = new Vector4(shadowStrength, softShadows, LightTypeIdentifierInShadowParams_Spot, perLightFirstShadowSliceIndex);
                                     m_AdditionalLightShadowSliceIndexTo_WorldShadowMatrix[globalShadowSliceIndex] = shadowTransform;
                                     m_AdditionalLightIndexToShadowParams[additionalLightIndex] = shadowParams;
+
+                                    // zCubed Additions
+                                    var additional = light.GetUniversalAdditionalLightData();
+                                    Vector4 pcssParams = new Vector4(0, additional.PCFRadius, 0, 0);
+                                    m_AdditionalLightPCSSParams[additionalLightIndex] = pcssParams;
+                                    // ================
+
                                     isValidShadowCastingLight = true;
                                 }
                             }
@@ -736,6 +748,12 @@ namespace UnityEngine.Rendering.Universal.Internal
                                     m_AdditionalLightShadowSliceIndexTo_WorldShadowMatrix[globalShadowSliceIndex] = shadowTransform;
                                     m_AdditionalLightIndexToShadowParams[additionalLightIndex] = shadowParams;
                                     isValidShadowCastingLight = true;
+
+                                    // zCubed Additions
+                                    var additional = light.GetUniversalAdditionalLightData();
+                                    Vector4 pcssParams = new Vector4(0, additional.PCFRadius, 0, 0);
+                                    m_AdditionalLightPCSSParams[additionalLightIndex] = pcssParams;
+                                    // ================
                                 }
                             }
                         }
@@ -983,6 +1001,8 @@ namespace UnityEngine.Rendering.Universal.Internal
             {
                 cmd.SetGlobalVectorArray(AdditionalShadowsConstantBuffer._AdditionalShadowParams, m_AdditionalLightIndexToShadowParams);                         // per-light data
                 cmd.SetGlobalMatrixArray(AdditionalShadowsConstantBuffer._AdditionalLightsWorldToShadow, m_AdditionalLightShadowSliceIndexTo_WorldShadowMatrix); // per-shadow-slice data
+                cmd.SetGlobalVectorArray(AdditionalShadowsConstantBuffer._AdditionalPCSSParams, m_AdditionalLightPCSSParams); // per-light PCSS settings
+                // ================
             }
 
             ShadowUtils.GetScaleAndBiasForLinearDistanceFade(m_MaxShadowDistanceSq, m_CascadeBorder, out float shadowFadeScale, out float shadowFadeBias);

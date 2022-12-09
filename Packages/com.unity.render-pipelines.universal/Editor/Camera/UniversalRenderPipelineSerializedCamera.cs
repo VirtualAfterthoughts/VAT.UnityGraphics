@@ -36,6 +36,18 @@ namespace UnityEditor.Rendering.Universal
         public SerializedProperty allowXRRendering { get; }
 #endif
 
+        // zCubed Additions
+        public SerializedProperty renderVolumetrics;
+        public SerializedProperty volumetricsResolution;
+        public SerializedProperty volumetricsSlices;
+        public SerializedProperty volumetricsSteps;
+        public SerializedProperty volumetricsFar;
+        public SerializedProperty volumetricsDensity;
+        public SerializedProperty volumetricsScattering;
+        public SerializedProperty volumetricsQuality;
+        public SerializedProperty volumetricsRenderFlags;
+        // ================
+
         public (Camera camera, UniversalRenderPipelineSerializedCamera serializedCamera) this[int index]
         {
             get
@@ -97,6 +109,15 @@ namespace UnityEditor.Rendering.Universal
 #if ENABLE_VR && ENABLE_XR_MODULE
             allowXRRendering = serializedAdditionalDataObject.FindProperty("m_AllowXRRendering");
 #endif
+
+            // zCubed Additions
+            renderVolumetrics = serializedAdditionalDataObject.FindProperty("m_RenderVolumetrics");
+            volumetricsResolution = serializedAdditionalDataObject.FindProperty("m_VolumetricsResolution");
+            volumetricsSlices = serializedAdditionalDataObject.FindProperty("m_VolumetricsSlices");
+            volumetricsSteps = serializedAdditionalDataObject.FindProperty("m_VolumetricsSteps");
+            volumetricsFar = serializedAdditionalDataObject.FindProperty("m_VolumetricsFar");
+            volumetricsQuality = serializedAdditionalDataObject.FindProperty("m_VolumetricsQuality");
+            volumetricsRenderFlags = serializedAdditionalDataObject.FindProperty("m_VolumetricsRenderFlags");
         }
 
         /// <summary>

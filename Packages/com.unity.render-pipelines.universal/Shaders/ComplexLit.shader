@@ -65,6 +65,25 @@ Shader "Universal Render Pipeline/Complex Lit"
         [HideInInspector][NoScaleOffset]unity_Lightmaps("unity_Lightmaps", 2DArray) = "" {}
         [HideInInspector][NoScaleOffset]unity_LightmapsInd("unity_LightmapsInd", 2DArray) = "" {}
         [HideInInspector][NoScaleOffset]unity_ShadowMasks("unity_ShadowMasks", 2DArray) = "" {}
+
+        // zCubed Additions
+        _BRDFMap ("BRDF Map", 2D) = "white" {}
+        
+        [HideInInspector] _PackingMode("Packing Mode", float) = 0.0
+		
+        _BumpToOcclusion("Normal To Occlusion", Range(0.0, 2.0)) = 1.0
+
+        _EmissionFalloff("Emission Falloff", Range(-10, 10)) = 0.0
+        _EmissionMultiply("Emission Multiply", Float) = 0.0
+
+        _OcclusionContribution("AO Contribution", Vector) = (1.0, 1.0, 1.0, 1.0)
+        _EmissionOcclusion("Emission Occlusion", Range(0, 1)) = 1.0
+        _EmissionBakeMultipler("GI Multiplier", Float) = 1.0
+
+        
+        _ProximityFadeBias("Proximity Fade Bias", Float) = -0.05
+        _ProximityFadeDepth("Proximity Fade Depth", Float) = 0.05
+        // ----------------
     }
 
     SubShader
@@ -138,6 +157,14 @@ Shader "Universal Render Pipeline/Complex Lit"
             #pragma multi_compile_instancing
             #pragma instancing_options renderinglayer
             #pragma multi_compile _ DOTS_INSTANCING_ON
+
+            //--------------------------------------
+            // zCubed Additions
+            #pragma shader_feature_local_fragment _BRDFMAP
+            #pragma shader_feature_local_fragment _ALBEDO_EMISSION_MULTIPLY
+            #pragma shader_feature_local_fragment _ALPHAGLASS_ON
+            #pragma shader_feature_local_fragment _PROXIMITY_FADE
+            #pragma multi_compile _ LOD_FADE_CROSSFADE
 
             #pragma vertex LitPassVertex
             #pragma fragment LitPassFragment
@@ -279,6 +306,9 @@ Shader "Universal Render Pipeline/Complex Lit"
 
             #pragma shader_feature_local_fragment _SPECGLOSSMAP
 
+            // zCubed Additions
+            #define _EMISSION_MULTIPLY
+
             #include "Packages/com.unity.render-pipelines.universal/Shaders/LitInput.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/Shaders/LitMetaPass.hlsl"
 
@@ -305,6 +335,24 @@ Shader "Universal Render Pipeline/Complex Lit"
 
             #include "Packages/com.unity.render-pipelines.universal/Shaders/LitInput.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/Shaders/Utils/Universal2D.hlsl"
+            ENDHLSL
+        }
+        Pass
+        {
+            Name "MotionVectors"
+            Tags{ "LightMode" = "MotionVectors" }
+
+            ZWrite[_ZWrite]
+            Cull[_Cull]
+
+            HLSLPROGRAM
+			#pragma target 4.5
+
+            #pragma multi_compile_instancing
+            #include "Packages/com.unity.render-pipelines.universal/Shaders/LitMotionVectors.hlsl"
+
+            #pragma vertex vert
+            #pragma fragment frag
             ENDHLSL
         }
     }

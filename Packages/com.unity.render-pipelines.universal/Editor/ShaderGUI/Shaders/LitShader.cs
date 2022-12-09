@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace UnityEditor.Rendering.Universal.ShaderGUI
 {
-    internal class LitShader : BaseShaderGUI
+    public class LitShader : BaseShaderGUI
     {
         static readonly string[] workflowModeNames = Enum.GetNames(typeof(LitGUI.WorkflowMode));
 
@@ -47,7 +47,7 @@ namespace UnityEditor.Rendering.Universal.ShaderGUI
         {
             base.DrawSurfaceInputs(material);
             LitGUI.Inputs(litProperties, materialEditor, material);
-            DrawEmissionProperties(material, true);
+            DrawEmissionProperties(material, true, litProperties.emissionFalloffProp, litProperties.emissionMultiplyProp, litProperties.emissionOcclusionProp, litProperties.occlusionMap.textureValue != null, litProperties.emissionGIMultiplierProp);
             DrawTileOffset(materialEditor, baseMapProp);
         }
 

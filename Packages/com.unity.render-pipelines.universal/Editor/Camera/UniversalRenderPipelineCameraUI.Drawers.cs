@@ -26,6 +26,10 @@ namespace UnityEditor.Rendering.Universal
             Environment = 1 << 6,
             /// <summary> Stack</summary>
             Stack = 1 << 7,
+
+            // zCubed Additions
+            Volumetrics = 1 << 8
+            // ================
         }
 
         static readonly ExpandedState<Expandable, Camera> k_ExpandedState = new(Expandable.Projection, "URP");
@@ -55,7 +59,11 @@ namespace UnityEditor.Rendering.Universal
             Rendering.Drawer,
             SectionStackSettings,
             Environment.Drawer,
-            Output.Drawer
+            Output.Drawer,
+            CED.FoldoutGroup(Styles.volumetricsHeader,
+                Expandable.Volumetrics,
+                k_ExpandedState,
+            DrawVolumetricsContent)
         };
 
         static void DrawerProjection(UniversalRenderPipelineSerializedCamera p, Editor owner)
@@ -78,20 +86,21 @@ namespace UnityEditor.Rendering.Universal
             EditorGUI.BeginChangeCheck();
 
             CameraRenderType originalCamType = (CameraRenderType)p.cameraType.intValue;
-            CameraRenderType camType = scriptableRenderer.SupportsCameraStackingType(CameraRenderType.Overlay) ? originalCamType : CameraRenderType.Base;
-            EditorGUI.BeginDisabledGroup(scriptableRenderer.SupportedCameraStackingTypes() == 0);
+            CameraRenderType camType = (originalCamType != CameraRenderType.Base && isDeferred) ? CameraRenderType.Base : originalCamType;
+
             camType = (CameraRenderType)EditorGUILayout.EnumPopup(
                 Styles.cameraType,
                 camType,
-                e => scriptableRenderer.SupportsCameraStackingType((CameraRenderType)e),
+                e => !isDeferred || (CameraRenderType)e != CameraRenderType.Overlay,
                 false
             );
-            EditorGUI.EndDisabledGroup();
 
             if (EditorGUI.EndChangeCheck() || camType != originalCamType)
             {
                 p.cameraType.intValue = (int)camType;
             }
+
+            EditorGUI.EndDisabledGroup();
 
             EditorGUILayout.Space();
         }
@@ -102,6 +111,48 @@ namespace UnityEditor.Rendering.Universal
             {
                 cameraEditor.DrawStackSettings();
             }
+        }
+
+        // zCubed Additions
+        public static class VolumetricsStyles
+        {
+            public static GUIContent RenderVolumetrics = new GUIContent("Render Volumetrics", "Should this camera render a volumetrics pass?");
+            public static GUIContent VolumetricsResolution = new GUIContent("Planar Quality", "How wide and tall is the volumetric buffer? (on the X & Y axis)");
+            public static GUIContent VolumetricsQuality = new GUIContent("Slice Quality", "What resolution is the volumetric buffer? (on the Z axis)");
+            public static GUIContent VolumetricsSteps = new GUIContent("Steps", "How many steps do we take through the volumetric buffer from front to back?");
+            public static GUIContent VolumetricsFar = new GUIContent("Far", "How far should volumetrics be rendered out in front of the view?");
+            public static GUIContent VolumetricsDensity = new GUIContent("Density", "How dense is the fog? (color * density)");
+            public static GUIContent VolumetricsScattering = new GUIContent("Scattering", "What scattering factor should be used? (changes behavior of looking at lights)");
+            public static GUIContent VolumetricsRenderFlags = new GUIContent("Render Flags", "What types of fog should we render? (Baked / Realtime / Both?)");
+        }
+
+        static void DrawVolumetricsContent(UniversalRenderPipelineSerializedCamera p, Editor owner)
+        {
+            EditorGUI.BeginChangeCheck();
+
+            EditorGUILayout.PropertyField(p.renderVolumetrics, VolumetricsStyles.RenderVolumetrics);
+
+            using (var scope = new EditorGUI.DisabledScope(!p.renderVolumetrics.boolValue))
+            {
+                EditorGUILayout.HelpBox($"Planar quality is for the X and Y axes!\nSlice quality is the Z axis!", MessageType.Info);
+
+                EditorGUILayout.LabelField($"Values: (16 / 32 / 64 / 96 / 128 / 256)");
+                EditorGUILayout.PropertyField(p.volumetricsResolution, VolumetricsStyles.VolumetricsResolution);
+                EditorGUILayout.Space();
+
+                EditorGUILayout.LabelField($"Values: (16 / 32 / 64 / 96 / 128 / 256)");
+                EditorGUILayout.PropertyField(p.volumetricsQuality, VolumetricsStyles.VolumetricsQuality);
+                EditorGUILayout.Space();
+
+                EditorGUILayout.LabelField($"Render Flags: What fog types to render?");
+                EditorGUILayout.PropertyField(p.volumetricsRenderFlags, VolumetricsStyles.VolumetricsRenderFlags);
+                EditorGUILayout.Space();
+
+                EditorGUILayout.PropertyField(p.volumetricsFar, VolumetricsStyles.VolumetricsFar);
+            }
+
+            if (EditorGUI.EndChangeCheck())
+                p.Apply();
         }
     }
 }

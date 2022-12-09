@@ -577,6 +577,11 @@ namespace UnityEngine.Rendering.Universal
             return settings;
         }
 
+        // zCubed Additions
+        public virtual void SetupPreRender(ScriptableRenderer renderer, ref RenderingData renderingData) 
+        { 
+        }
+
         public static bool operator <(ScriptableRenderPass lhs, ScriptableRenderPass rhs)
         {
             return lhs.renderPassEvent < rhs.renderPassEvent;

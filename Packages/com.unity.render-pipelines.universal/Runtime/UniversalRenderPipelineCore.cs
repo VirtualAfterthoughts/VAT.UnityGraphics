@@ -381,7 +381,7 @@ namespace UnityEngine.Rendering.Universal
         public const string CastingPunctualLightShadow = "_CASTING_PUNCTUAL_LIGHT_SHADOW"; // This is used during shadow map generation to differentiate between directional and punctual light shadows, as they use different formulas to apply Normal Bias
         public const string AdditionalLightsVertex = "_ADDITIONAL_LIGHTS_VERTEX";
         public const string AdditionalLightsPixel = "_ADDITIONAL_LIGHTS";
-        internal const string ClusteredRendering = "_CLUSTERED_RENDERING";
+        public const string ClusteredRendering = "_CLUSTERED_RENDERING";
         public const string AdditionalLightShadows = "_ADDITIONAL_LIGHT_SHADOWS";
         public const string ReflectionProbeBoxProjection = "_REFLECTION_PROBE_BOX_PROJECTION";
         public const string ReflectionProbeBlending = "_REFLECTION_PROBE_BLENDING";
@@ -400,7 +400,7 @@ namespace UnityEngine.Rendering.Universal
         public const string DepthMsaa8 = "_DEPTH_MSAA_8";
 
         public const string LinearToSRGBConversion = "_LINEAR_TO_SRGB_CONVERSION";
-        internal const string UseFastSRGBLinearConversion = "_USE_FAST_SRGB_LINEAR_CONVERSION";
+        public const string UseFastSRGBLinearConversion = "_USE_FAST_SRGB_LINEAR_CONVERSION";
 
         public const string DBufferMRT1 = "_DBUFFER_MRT1";
         public const string DBufferMRT2 = "_DBUFFER_MRT2";
@@ -467,10 +467,24 @@ namespace UnityEngine.Rendering.Universal
 
         // XR
         public const string UseDrawProcedural = "_USE_DRAW_PROCEDURAL";
+        
+        // zCubed Additions
+        public const string _BRDFMAP = "_BRDFMAP";
+        public const string _ALBEDO_EMISSION_MULTIPLY = "_ALBEDO_EMISSION_MULTIPLY";
+        public const string _ALPHAGLASS_ON = "_ALPHAGLASS_ON";
+        // ----------------
     }
 
     public sealed partial class UniversalRenderPipeline
     {
+        internal static GraphicsFormat MakeUnormRenderTextureGraphicsFormat()
+        {
+            if (RenderingUtils.SupportsGraphicsFormat(GraphicsFormat.A2B10G10R10_UNormPack32, FormatUsage.Linear | FormatUsage.Render))
+                return GraphicsFormat.A2B10G10R10_UNormPack32;
+            else
+                return GraphicsFormat.R8G8B8A8_UNorm;
+        }
+
         // Holds light direction for directional lights or position for punctual lights.
         // When w is set to 1.0, it means it's a punctual light.
         static Vector4 k_DefaultLightPosition = new Vector4(0.0f, 0.0f, 1.0f, 0.0f);
@@ -564,17 +578,6 @@ namespace UnityEngine.Rendering.Universal
             }
 
             return SystemInfo.GetGraphicsFormat(DefaultFormat.LDR);
-        }
-
-        // Returns a UNORM based render texture format
-        // When supported by the device, this function will prefer formats with higher precision, but the same bit-depth
-        // NOTE: This function does not guarantee that the returned format will contain an alpha channel.
-        internal static GraphicsFormat MakeUnormRenderTextureGraphicsFormat()
-        {
-            if (RenderingUtils.SupportsGraphicsFormat(GraphicsFormat.A2B10G10R10_UNormPack32, FormatUsage.Linear | FormatUsage.Render))
-                return GraphicsFormat.A2B10G10R10_UNormPack32;
-            else
-                return GraphicsFormat.R8G8B8A8_UNorm;
         }
 
         static RenderTextureDescriptor CreateRenderTextureDescriptor(Camera camera, float renderScale,
@@ -913,6 +916,10 @@ namespace UnityEngine.Rendering.Universal
         LensFlareDataDriven,
         MotionVectors,
 
-        FinalBlit
+        FinalBlit,
+
+        // zCubed Additions
+
+        // ----------------
     }
 }
